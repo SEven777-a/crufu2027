@@ -101,7 +101,9 @@ async function doSync() {
     j.events.forEach(e => { const t = Date.parse(e.at); if (e.leg === 0) st.raceStart = t; else st.finishes[e.leg] = t; });
     state = st; saveState();
     if (st.raceStart && cfg.demo) { cfg.demo = false; saveCfg(); toast('比賽已開跑，自動關閉示範模式'); }
+    else if (cfg.demo && !cfg.demoChosen) { cfg.demo = false; saveCfg(); }   // 已連上隊伍：預設看真實資料
     j.locations.forEach(addLoc);
+    autoHandoff();
     sync.since = j.locations.length ? j.locations[j.locations.length - 1].received_at : (sync.since || j.now);
   } catch (e) {
     sync.ok = false; sync.err = e.message;
@@ -119,6 +121,38 @@ function record(op, leg, at) {
   if (!sync.key) return;
   pending.push({ op, leg, at: at ? new Date(at).toISOString() : undefined, by: cfg.me ? String(cfg.me) : '' });
   savePending(); doSync();
+}
+// ---------- GPS 自動交棒 ----------
+// 跑者 GPS 剩 500 m → 全隊手機提醒下一棒準備；進到終點 80 m 內 → 自動記錄完成（時間用 GPS 到點那一刻）
+// 只看 3 分鐘內的新點；同一棒每支手機只自動一次，判斷錯了到棒次頁「取消這棒的完成紀錄」，不會再被自動補回
+// 跑者手機沒回報 GPS 時，照樣用手動按鈕
+const AUTO_NEAR_KM = 0.5, AUTO_ARRIVE_KM = 0.08, LS_AUTO = LS_PRE + 'crufu.auto.v1';
+let autoSeen = {};                          // {棒次: 'near'|'done'}
+try { autoSeen = JSON.parse(localStorage.getItem(LS_AUTO)) || {}; } catch (e) { autoSeen = {}; }
+const saveAuto = () => lsSet(LS_AUTO, JSON.stringify(autoSeen));
+const buzz = () => { try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (e) { /* 不支援震動就算了 */ } };
+function autoHandoff() {
+  if (cfg.demo || !sync.key) return;
+  if (autoSeen._start !== state.raceStart) { autoSeen = { _start: state.raceStart }; saveAuto(); }   // 重新開跑（例如測試後清除紀錄）就重算
+  const now = nowMs(), sch = schedule(now, raceState(now)), s = sch.find(x => x.status === 'run');
+  if (!s || autoSeen[s.n] === 'done') return;
+  const nx = sch[s.n];
+  for (const p of sync.loc[String(s.runner)] || []) {
+    if (p.t < s.start + 60e3 || now - p.t > 3 * 60e3) continue;
+    const sn = snapKm(p.lat, p.lon, s.L.endKm - 1.5, s.L.endKm + 0.3);
+    if (!sn || sn.off > 150) continue;
+    const left = s.L.endKm - sn.km;
+    if (left <= AUTO_ARRIVE_KM) {
+      autoSeen[s.n] = 'done'; saveAuto();
+      record('finish', s.n, p.t); buzz();
+      toast(nx ? `GPS 到點：第 ${s.n} 棒 ${runnerName(s.runner)} 自動交棒給 ${runnerName(nx.runner)}` : 'GPS 到點：完賽！🎉');
+      return;
+    }
+    if (left <= AUTO_NEAR_KM && !autoSeen[s.n]) {
+      autoSeen[s.n] = 'near'; saveAuto(); buzz();
+      toast(`${runnerName(s.runner)} 剩約 ${Math.max(100, Math.round(left * 10) * 100)} m${nx ? `，下一棒 ${runnerName(nx.runner)} 準備` : ' 到終點'}`);
+    }
+  }
 }
 function syncStatus() {
   if (!sync.key) return '<span class="slow">未連線（只存在這支手機）</span>';
@@ -772,16 +806,21 @@ let rulesBack = null;
 function openRules() {
   rulesBack = sheetLeg; sheetLeg = null;
   openSheet(`<div class="sheet-head"><h3>換棒規則</h3><button data-act="rules-back">返回</button></div>
-    <p class="muted" style="font-size:13px;margin-top:0">大會規定：每人每輪剛好跑一棒、總共三棒；每輪前 5 棒的跑者坐 Car1、後 5 棒坐 Car2；受傷者剩下的棒次可由隊友代跑。</p>
+    <h2 style="margin-top:4px">大會只規定三件事</h2>
     <div class="card rules">
-      <div class="kv"><b>自動對調</b><span>某棒改成同一輪的另一個人，兩棒自動對調，每人每輪仍是一棒</span></div>
-      <div class="kv"><b>已開跑鎖住</b><span>已完成或跑步中的棒次顯示 🔒，不能改</span></div>
-      <div class="kv"><b>本輪已跑反灰</b><span>這一輪已經跑過的人選不到，標示「本輪已跑」</span></div>
-      <div class="kv"><b>受傷代跑</b><span>在單棒詳情勾「受傷代跑」才允許有人多跑；受傷者退出後不能再回來跑</span></div>
-      <div class="kv"><b>比賽中改順序</b><span>在「設定 → 棒次順序」改，只影響還沒跑的棒次</span></div>
-      <div class="kv"><b>紅框／黃框</b><span>紅框是違反規定，要改；黃框是提醒（例如有人連跑兩棒、有代跑）</span></div>
+      <div class="kv"><b>① 每輪跑一棒</b><span>30 棒分三輪，每輪 10 棒；每個人每輪跑 1 棒，總共 3 棒</span></div>
+      <div class="kv"><b>② 坐哪台車</b><span>每輪第 1–5 棒的人坐 Car1，第 6–10 棒的人坐 Car2</span></div>
+      <div class="kv"><b>③ 受傷可代跑</b><span>有人受傷跑不了，他剩下的棒次可以給隊友多跑</span></div>
     </div>
-    <p class="muted" style="font-size:13px">換車提醒：同一輪內把 Car1 和 Car2 的人對調，兩人那一輪都要換車坐，記得在換車點（第 1、6、11…26 棒起點）先換好。</p>`);
+    <h2>在 app 裡怎麼換人</h2>
+    <div class="card rules">
+      <div class="kv"><b>想換人</b><span>點那一棒 → 選另一個人。兩人會<b>對調</b>，不會有人多跑或少跑</span></div>
+      <div class="kv"><b>🔒 不能改</b><span>跑完的、正在跑的棒次</span></div>
+      <div class="kv"><b>灰色選不到</b><span>這一輪已經跑過的人</span></div>
+      <div class="kv"><b>有人受傷</b><span>點那一棒 → 勾「受傷代跑」才能讓別人多跑；受傷的人之後不能再回來跑</span></div>
+      <div class="kv"><b>紅框／黃框</b><span>紅框＝違規，一定要改；黃框＝提醒，看看就好</span></div>
+    </div>
+    <p class="muted" style="font-size:13px">⚠ 如果把 Car1 和 Car2 的人對調，兩人那一輪也要<b>互換車子坐</b>，在換車點（第 1、6、11、16、21、26 棒起點）先換好。</p>`);
   document.getElementById('sheet').scrollTop = 0;
 }
 
@@ -842,7 +881,7 @@ function openSettings() {
       <input data-act="set-pace" data-r="${r}" value="${fmtPace(cfg.paces[r]).replace("'", ':').replace('"', '')}" inputmode="numeric" class="pace"></label>`).join('')}</div>
     <h2>示範模式</h2>
     <div class="card">
-      <div class="kv"><span>用模擬時間看比賽中的畫面</span><input type="checkbox" data-act="set-demo" ${cfg.demo ? 'checked' : ''} style="width:22px;height:22px"></div>
+      <div class="kv"><span>練習用：用假的時間看比賽中的畫面<br><span class="muted" style="font-size:12px">連上隊伍後預設關閉；比賽開跑後一定會自動關閉</span></span><input type="checkbox" data-act="set-demo" ${cfg.demo ? 'checked' : ''} style="width:22px;height:22px"></div>
       ${cfg.demo ? `<div style="padding-top:10px">模擬「出發後 <b id="demo-h">${cfg.demoHours}</b> 小時」＝<b id="demo-t">${fmtDT(nowMs())}</b>
         <input type="range" min="-1" max="30" step="0.25" value="${cfg.demoHours}" data-act="set-demo-h" style="width:100%;margin-top:8px;padding:0"></div>` : ''}
     </div>
@@ -925,6 +964,7 @@ document.addEventListener('click', e => {
       record('finish', n, Date.now()); toast(n < 30 ? `第 ${n} 棒完成，交棒給第 ${n + 1} 棒` : '完賽！🎉');
       if (sheetLeg) renderLegSheet(); render(); break;
     case 'undo':
+      autoSeen[n] = 'done'; saveAuto();
       record('unfinish', n); toast(`已取消第 ${n} 棒的完成紀錄`); renderLegSheet(); render(); break;
     case 'reset':
       if (!resetArmed) { resetArmed = true; a.textContent = '再按一次確認清除'; setTimeout(() => { resetArmed = false; }, 4000); break; }
@@ -998,7 +1038,7 @@ document.addEventListener('change', e => {
     if (v && v >= 180 && v <= 900) { cfg.paces[+e.target.dataset.r] = v; sharedChanged(); render(); }
     else { toast('配速格式像 7:00，範圍 3:00～15:00'); e.target.value = fmtPace(cfg.paces[+e.target.dataset.r]).replace("'", ':').replace('"', ''); }
   }
-  if (a === 'set-demo') { cfg.demo = e.target.checked; saveCfg(); openSettings(); render(); }
+  if (a === 'set-demo') { cfg.demo = e.target.checked; cfg.demoChosen = true; saveCfg(); openSettings(); render(); }
 });
 document.addEventListener('input', e => {
   if (e.target.dataset.act === 'set-demo-h') {

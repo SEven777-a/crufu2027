@@ -1,5 +1,5 @@
 // 模擬模式：網址加 ?sim 時載入（在 app.js 之前）
-// 假的 10 人比賽：時間加速、每人每分鐘一筆 GPS、到點自動按交棒；
+// 假的 10 人比賽：時間加速、每人每分鐘一筆 GPS（交棒由 app 的 GPS 自動交棒處理，也可打開「代按交棒」）；
 // 攔截 team 函式的請求在本機回應，不連真的 Supabase，也不動正式 app 的存檔（存檔加 sim. 前綴）
 'use strict';
 window.CRUFU_SIM = true;
@@ -80,12 +80,12 @@ window.CRUFU_SIM = true;
   const srv = {
     config: { planStart: D.planStart, paces: PACES, names: NAMES, order: ORDER, assign: {}, sub: {} },
     cfgAt: new Date(START - 86400e3).toISOString(),
-    events: {}, undone: new Set(), genUntil: 0, auto: true,
+    events: {}, undone: new Set(), genUntil: 0, auto: false,   // app 會用 GPS 自動交棒；打開「代按交棒」＝模擬有人手動按
   };
   const iso = ms => new Date(ms).toISOString();
   function autoPress(now) {
+    if (now >= START && srv.events[0] == null && !srv.undone.has(0)) srv.events[0] = START;   // 開跑一律代按
     if (!srv.auto) return;
-    if (now >= START && srv.events[0] == null && !srv.undone.has(0)) srv.events[0] = START;
     legT.forEach((x, i) => {
       const at = x.end + 30e3;                // 到點後 30 秒有人按交棒
       if (now >= at && srv.events[i + 1] == null && !srv.undone.has(i + 1)) srv.events[i + 1] = at;
@@ -158,7 +158,7 @@ window.CRUFU_SIM = true;
       bar.innerHTML = `<span class="grow">🧪 模擬 <b>${fmt(now)}</b> · ${what}</span>
         ${[1, 60, 300, 900].map(s => `<button data-sp="${s}" class="${clock.speed === s ? 'on' : ''}">${s}×</button>`).join('')}
         <button data-j="30">+30分</button><button data-j="180">+3時</button>
-        <button data-auto class="${srv.auto ? 'on' : ''}">自動交棒</button><button data-reset>重來</button>`;
+        <button data-auto class="${srv.auto ? 'on' : ''}">代按交棒</button><button data-reset>重來</button>`;
       document.body.style.setProperty('--sim-h', bar.offsetHeight + 'px');   // 控制列在手機上會折成兩行
     };
     bar.addEventListener('click', e => {
