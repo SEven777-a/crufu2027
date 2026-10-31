@@ -7,6 +7,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>CRUFU 2027 隊內追蹤</title>
+<meta name="apple-mobile-web-app-title" content="CRUFU">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/app-192.png">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
 :root {
@@ -239,7 +242,7 @@ select option:disabled { color: #666; }
 <!-- ?v= 改版時加一，避免手機讀到舊的快取 -->
 <script src="data.js?v=8"></script>
 <!-- 網址加 ?sim 進入模擬模式（假的 10 人比賽，不連真的資料庫） -->
-<script>if (/[?&]sim\b/.test(location.search)) document.write('<script src="sim.js?v=2"><\/script>');</script>
-<script src="app.js?v=13"></script>
+<script>if (/[?&]sim\b/.test(location.search)) document.write('<script src="sim.js?v=3"><\/script>');</script>
+<script src="app.js?v=14"></script>
 </body>
 </html>

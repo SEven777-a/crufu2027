@@ -52,9 +52,21 @@ const sync = { key: lsGet(LS_KEY), pin: lsGet(LS_PIN), admin: false, ok: false, 
 let pending = [];                          // 離線時按的交棒，連上後依序補送
 try { pending = JSON.parse(localStorage.getItem(LS_PEND)) || []; } catch (e) { pending = []; }
 const savePending = () => lsSet(LS_PEND, pending.length ? JSON.stringify(pending) : '');
+// iPhone 的「加入主畫面」版和 Safari 版存檔是分開的：Safari 裡把隊伍密碼留在網址上，加入主畫面時一起帶過去
+const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isStandalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+function keepHashForIOS() {
+  const h = sync.key && isIOS && !isStandalone && !window.CRUFU_SIM
+    ? `#k=${encodeURIComponent(sync.key)}${cfg.me ? `&me=${cfg.me}` : ''}` : '';
+  history.replaceState(null, '', location.pathname + location.search + h);
+}
 {
-  const m = location.hash.match(/[#&]k=([^&]+)/);
-  if (m && !window.CRUFU_SIM) { sync.key = decodeURIComponent(m[1]); lsSet(LS_KEY, sync.key); history.replaceState(null, '', location.pathname + location.search); }
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (h.get('k') && !window.CRUFU_SIM) {
+    sync.key = h.get('k'); lsSet(LS_KEY, sync.key);
+    if (/^(10|[1-9])$/.test(h.get('me') || '')) { cfg.me = +h.get('me'); saveCfg(); }
+  }
+  if (location.hash) keepHashForIOS();
 }
 const canEdit = () => !sync.key || sync.admin;
 
@@ -90,7 +102,7 @@ async function doSync() {
     }
     if (sync.cfgDirty && sync.admin) await pushConfig();
     const j = await api('sync', { since: sync.since || undefined });
-    Object.assign(sync, { admin: j.admin, ok: true, err: '', last: Date.now() });
+    Object.assign(sync, { admin: j.admin, ok: true, err: '', last: Date.now(), watchAt: j.watchAt || null });
     if (j.config) {
       if (j.config.updated_at !== sync.cfgAt && !sync.cfgDirty) {
         SHARED.forEach(k => { if (j.config.data[k] != null) cfg[k] = j.config.data[k]; });
@@ -112,6 +124,10 @@ async function doSync() {
     if (sync.again) { sync.again = false; setTimeout(doSync, 0); }
   }
   if (!document.getElementById('sheet-bg').classList.contains('open')) render();
+  else refreshSetup();
+  if (sync.ok && !cfg.setupDone && !setupShown && !window.CRUFU_SIM && !document.getElementById('sheet-bg').classList.contains('open')) {
+    setupShown = true; openSetup();
+  }
 }
 // 交棒、取消交棒：先改本機畫面，再排進待送清單（沒訊號也不會丟）
 function record(op, leg, at) {
@@ -124,21 +140,22 @@ function record(op, leg, at) {
 }
 // ---------- GPS 自動交棒 ----------
 // 跑者 GPS 剩 500 m → 全隊手機提醒下一棒準備；進到終點 80 m 內 → 自動記錄完成（時間用 GPS 到點那一刻）
-// 只看 3 分鐘內的新點；同一棒每支手機只自動一次，判斷錯了到棒次頁「取消這棒的完成紀錄」，不會再被自動補回
+// 伺服器的 watch 函式有在跑時由伺服器做（鎖屏也有推播），這裡只是備援；只看 20 分鐘內的點；同一棒每支手機只自動一次，判斷錯了到棒次頁「取消這棒的完成紀錄」，不會再被自動補回
 // 跑者手機沒回報 GPS 時，照樣用手動按鈕
 const AUTO_NEAR_KM = 0.5, AUTO_ARRIVE_KM = 0.08, LS_AUTO = LS_PRE + 'crufu.auto.v1';
 let autoSeen = {};                          // {棒次: 'near'|'done'}
 try { autoSeen = JSON.parse(localStorage.getItem(LS_AUTO)) || {}; } catch (e) { autoSeen = {}; }
 const saveAuto = () => lsSet(LS_AUTO, JSON.stringify(autoSeen));
 const buzz = () => { try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (e) { /* 不支援震動就算了 */ } };
+const serverWatch = () => !!sync.watchAt && Date.now() - Date.parse(sync.watchAt) < 3 * 60e3;
 function autoHandoff() {
-  if (cfg.demo || !sync.key) return;
+  if (cfg.demo || !sync.key || serverWatch()) return;
   if (autoSeen._start !== state.raceStart) { autoSeen = { _start: state.raceStart }; saveAuto(); }   // 重新開跑（例如測試後清除紀錄）就重算
   const now = nowMs(), sch = schedule(now, raceState(now)), s = sch.find(x => x.status === 'run');
   if (!s || autoSeen[s.n] === 'done') return;
   const nx = sch[s.n];
   for (const p of sync.loc[String(s.runner)] || []) {
-    if (p.t < s.start + 60e3 || now - p.t > 3 * 60e3) continue;
+    if (p.t < s.start + 60e3 || now - p.t > 20 * 60e3) continue;
     const sn = snapKm(p.lat, p.lon, s.L.endKm - 1.5, s.L.endKm + 0.3);
     if (!sn || sn.off > 150) continue;
     const left = s.L.endKm - sn.km;
@@ -154,6 +171,98 @@ function autoHandoff() {
     }
   }
 }
+// ---------- 推播通知（伺服器的 watch 函式送出；手機鎖屏也收得到） ----------
+const VAPID_PUBLIC = 'BG_mXvYI_n0yLNdII27wUN-YocjTuRKt3eKr0NfIlWUjmVZ6OTsNIHgxzt3yiI54fOyE8_4Ej9oIbE31yW6-8to';
+const WATCH_API = API.replace(/team$/, 'watch');
+const pushOK = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const push = { state: 'checking', endpoint: '' };   // checking／on／off／denied／need-install（iPhone 要先加入主畫面）／unsupported
+let swReg = null;
+const b64uBytes = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
+async function pushInit() {
+  if (window.CRUFU_SIM) { push.state = 'unsupported'; return; }
+  if (!pushOK) { push.state = isIOS && !isStandalone ? 'need-install' : 'unsupported'; return; }
+  try {
+    swReg = await navigator.serviceWorker.register('sw.js');
+    const sub = await swReg.pushManager.getSubscription();
+    push.endpoint = sub ? sub.endpoint : '';
+    push.state = Notification.permission === 'denied' ? 'denied' : sub ? 'on' : 'off';
+    if (sub && sync.key) api('subscribe', { sub: sub.toJSON(), person: cfg.me || '' }).catch(() => {});   // 順便更新「我是幾號」
+  } catch (e) { push.state = 'unsupported'; }
+}
+async function enablePush() {
+  if (!sync.key) throw new Error('請先用隊友連結連上隊伍');
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') { push.state = perm === 'denied' ? 'denied' : 'off'; throw new Error('沒有允許通知'); }
+  swReg = swReg || await navigator.serviceWorker.register('sw.js');
+  await navigator.serviceWorker.ready;
+  const sub = await swReg.pushManager.getSubscription()
+    || await swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(VAPID_PUBLIC) });
+  await api('subscribe', { sub: sub.toJSON(), person: cfg.me || '' });
+  push.endpoint = sub.endpoint; push.state = 'on';
+}
+async function disablePush() {
+  const sub = swReg && await swReg.pushManager.getSubscription();
+  if (sub) { await api('unsubscribe', { endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe(); }
+  push.endpoint = ''; push.state = 'off';
+}
+async function testPush() {
+  const r = await fetch(WATCH_API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key: sync.key, op: 'test', endpoint: push.endpoint }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.ok) throw new Error(j.error || `送出失敗（${j.status || r.status}）`);
+}
+function pushCard() {
+  const st = push.state;
+  const body = st === 'on' ? `<div class="kv"><span>✅ 已開啟</span><span><button class="chip plain" data-act="push-test">傳測試通知</button> <button class="chip plain" data-act="push-off">關閉</button></span></div>`
+    : st === 'off' ? `<button class="btn" data-act="push-on">開啟通知</button>`
+    : st === 'denied' ? `<div class="muted" style="font-size:13px">通知被封鎖了。到手機的<b>設定 → 通知</b>（Android 是 Chrome 的網站設定）把這個網站改成允許，再回來重新整理。</div>`
+    : st === 'need-install' ? `<div style="font-size:13px;line-height:1.7">iPhone 要先把 app 加到主畫面才能收通知：<br>
+        1. 按 Safari 下方的<b>分享</b>按鈕（方框加箭頭）<br>2. 選<b>「加入主畫面」</b>→ 新增<br>
+        3. 回到主畫面，點 <b>CRUFU</b> 圖示打開，再到這裡按「開啟通知」<br><span class="muted">需要 iOS 16.4 以上</span></div>`
+    : st === 'checking' ? '<div class="muted">檢查中…</div>'
+    : `<div class="muted" style="font-size:13px">這個瀏覽器不支援通知。Android 請用 <b>Chrome</b> 打開；iPhone 請用 <b>Safari</b> 並更新到 iOS 16.4 以上。</div>`;
+  return `<div class="card">${body}<div class="muted" style="font-size:12px;padding-top:8px">跑者剩 500 m、自動交棒、跑者停留 3 分鐘、收不到跑者位置時會通知；手機鎖屏也收得到。</div></div>`;
+}
+
+// ---------- 新手設定：我是誰 → OwnTracks 定位 → 通知 ----------
+const OT_STORE = { ios: 'https://apps.apple.com/app/owntracks/id692424691', android: 'https://play.google.com/store/apps/details?id=org.owntracks.android' };
+let otCfg = null, setupShown = false;
+function myLoc() { const a = cfg.me && sync.loc[String(cfg.me)]; return a && a[a.length - 1]; }
+function openSetup() {
+  sheetLeg = null;
+  const me = cfg.me, loc = myLoc(), locOk = loc && Date.now() - loc.t < 10 * 60e3;
+  const store = isIOS ? `<a class="btn ghost" href="${OT_STORE.ios}" target="_blank" rel="noopener">App Store 安裝 OwnTracks</a>`
+    : /Android/.test(navigator.userAgent) ? `<a class="btn ghost" href="${OT_STORE.android}" target="_blank" rel="noopener">Play 商店安裝 OwnTracks</a>`
+    : `<div class="btn-row"><a class="btn ghost" href="${OT_STORE.ios}" target="_blank" rel="noopener">App Store</a><a class="btn ghost" href="${OT_STORE.android}" target="_blank" rel="noopener">Play 商店</a></div>`;
+  const step = (ok, t) => `<h2>${ok ? '✅' : '⬜'} ${t}</h2>`;
+  openSheet(`<div class="sheet-head" id="setup-sheet"><h3>新手設定</h3><button data-act="close">稍後</button></div>
+    <p class="muted" style="font-size:13px;margin-top:0">三個步驟，做完隊友就看得到你的位置，比賽中的提醒你也收得到。</p>
+    ${step(!!me, '① 你是誰')}
+    <div class="card"><div class="kv"><span>我是</span><select data-act="set-me"><option value="">請選擇</option>${RUNNERS.map(r => `<option value="${r}" ${r === me ? 'selected' : ''}>${r} 號 · ${runnerName(r)}</option>`).join('')}</select></div></div>
+    ${step(locOk, '② 定位（OwnTracks）')}
+    <div class="card" style="font-size:14px;line-height:1.7">
+      ${locOk ? `<div>✅ 已收到你的位置（${agoText(loc.t)}）</div>` : `<div class="muted">${me ? '還沒收到你的位置，照下面做：' : '先完成第 ① 步'}</div>`}
+      ${me && !locOk ? `<div>1. 安裝 OwnTracks（裝過的跳過）</div>${store}
+        <div style="margin-top:10px">2. 按這顆，會打開 OwnTracks 並自動填好設定 → 按「匯入／Import」</div>
+        <button class="btn" data-act="ot-setup">一鍵設定 OwnTracks</button>
+        <div style="margin-top:10px">3. OwnTracks 要你給定位權限時，選<b>「永遠允許」</b>；手機的省電設定裡把 OwnTracks 設成<b>「不限制」</b></div>
+        <div class="muted" style="font-size:12px;margin-top:6px">設定好後走動一下，這裡 1～2 分鐘內會變成 ✅。按了沒反應？<button class="chip plain" data-act="ot-manual">改用手動設定</button></div>
+        <div id="ot-manual"></div>` : ''}
+    </div>
+    ${step(push.state === 'on', '③ 通知')}
+    ${pushCard()}
+    <button class="btn" data-act="setup-done" style="margin-top:14px">完成</button>`);
+}
+function refreshSetup() {
+  if (!document.getElementById('setup-sheet')) return;
+  const sh = document.getElementById('sheet'), y = sh.scrollTop;
+  openSetup(); sh.scrollTop = y;
+}
+async function getOtCfg() {
+  if (!otCfg || otCfg.deviceId !== String(cfg.me)) otCfg = (await api('otconfig', { person: String(cfg.me) })).config;
+  return otCfg;
+}
+
 function syncStatus() {
   if (!sync.key) return '<span class="slow">未連線（只存在這支手機）</span>';
   const p = pending.length ? ` · ${pending.length} 筆待送` : '';
@@ -861,10 +970,13 @@ function openSettings() {
       ${!sync.key ? `<div class="kv"><span>隊伍密碼</span><span><input id="key-in" style="width:120px" autocomplete="off"> <button class="chip plain" data-act="set-key">連線</button></span></div>
         <div class="muted" style="font-size:12px;padding-top:6px">用隊長傳的連結打開就會自動連線，不用手動輸入。</div>`
       : sync.admin ? `<div class="kv"><span>管理員</span><span>已解鎖 <button class="chip plain" data-act="lock">登出</button></span></div>
-        <button class="btn ghost" data-act="copy-link" style="margin-top:10px">複製隊友連結（含隊伍密碼）</button>`
+        <button class="btn ghost" data-act="copy-link" style="margin-top:10px">複製隊友連結（含隊伍密碼）</button>
+        <div class="muted" style="font-size:12px;padding-top:10px">正式發布前：清掉測試時的交棒紀錄、提醒紀錄和所有定位（名字、順序、配速、通知訂閱保留）。</div>
+        <button class="btn warn" data-act="purge" style="margin-top:8px">清除所有測試資料</button>`
       : `<div class="kv"><span>管理員密碼</span><span><input id="pin-in" type="password" style="width:100px" autocomplete="off"> <button class="chip plain" data-act="unlock">解鎖</button></span></div>
         <div class="muted" style="font-size:12px;padding-top:6px">名字、棒次順序、配速、出發時間由管理員設定，全隊同步；交棒誰都可以按。</div>`}
     </div>
+    ${sync.key ? `<button class="btn ghost" data-act="setup" style="margin-bottom:10px">新手設定（我是誰、定位、通知）</button>` : ''}
     <div class="card">
       <div class="kv"><span>我是</span><select data-act="set-me">${RUNNERS.map(r => `<option value="${r}" ${r === cfg.me ? 'selected' : ''}>${runnerName(r)}</option>`).join('')}</select></div>
       <div class="kv"><span>預計出發時間</span><input type="datetime-local" data-act="set-start" value="${toLocalInput(ps)}"></div>
@@ -879,6 +991,7 @@ function openSettings() {
     <div class="member-list">${RUNNERS.map(r => `<label><span class="muted num">${r}</span>
       <input data-act="set-name" data-r="${r}" value="${esc(cfg.names[r] || '')}" placeholder="${r} 號" maxlength="8">
       <input data-act="set-pace" data-r="${r}" value="${fmtPace(cfg.paces[r]).replace("'", ':').replace('"', '')}" inputmode="numeric" class="pace"></label>`).join('')}</div>
+    ${sync.key ? `<h2>通知</h2>${pushCard()}` : ''}
     <h2>示範模式</h2>
     <div class="card">
       <div class="kv"><span>練習用：用假的時間看比賽中的畫面<br><span class="muted" style="font-size:12px">連上隊伍後預設關閉；比賽開跑後一定會自動關閉</span></span><input type="checkbox" data-act="set-demo" ${cfg.demo ? 'checked' : ''} style="width:22px;height:22px"></div>
@@ -895,7 +1008,7 @@ function openSettings() {
 }
 
 // ---------- 主畫面更新 ----------
-let tab = 'me';
+let tab = 'me', purgeArmed = false;
 function render() {
   const now = nowMs(), st = raceState(now), sch = schedule(now, st);
   if (tab === 'me') renderMe(now, sch);
@@ -992,6 +1105,35 @@ document.addEventListener('click', e => {
       break;
     }
     case 'lock': sync.pin = ''; sync.admin = false; lsSet(LS_PIN, ''); toast('已登出管理員'); openSettings(); break;
+    case 'setup': openSetup(); document.getElementById('sheet').scrollTop = 0; break;
+    case 'setup-done': cfg.setupDone = true; saveCfg(); closeSheet(); render();
+      toast(push.state === 'on' && myLoc() ? '設定完成 👍' : '之後可以在 設定 → 新手設定 繼續'); break;
+    case 'push-on': case 'push-off': case 'push-test': {
+      const act = a.dataset.act; a.disabled = true;
+      (act === 'push-on' ? enablePush() : act === 'push-off' ? disablePush() : testPush())
+        .then(() => toast(act === 'push-on' ? '通知已開啟' : act === 'push-off' ? '通知已關閉' : '已送出，幾秒內會收到'))
+        .catch(err => toast(err.message))
+        .finally(() => { if (document.getElementById('setup-sheet')) refreshSetup(); else if (document.getElementById('sheet-bg').classList.contains('open')) openSettings(); });
+      break;
+    }
+    case 'ot-setup':
+      getOtCfg().then(c => { location.href = 'owntracks:///config?inline=' + encodeURIComponent(btoa(JSON.stringify(c))); })
+        .catch(err => toast(err.message));
+      break;
+    case 'ot-manual':
+      getOtCfg().then(c => {
+        document.getElementById('ot-manual').innerHTML = `<div class="card" style="margin-top:8px;font-size:13px;line-height:1.7">
+          OwnTracks → 設定（Settings）：<br>· 模式 Mode：<b>HTTP</b><br>· 網址 URL（長按全選複製）：
+          <div style="word-break:break-all;user-select:all;background:var(--card2);padding:6px;border-radius:8px">${esc(c.url)}</div>
+          · 裝置 ID（Device ID）：<b>${esc(c.deviceId)}</b>　· 縮寫（Tracker ID）：<b>${esc(c.tid)}</b><br>· 監控模式 Monitoring：<b>Move</b></div>`;
+      }).catch(err => toast(err.message));
+      break;
+    case 'purge':
+      if (!purgeArmed) { purgeArmed = true; a.textContent = '再按一次確認清除（無法復原）'; setTimeout(() => { purgeArmed = false; }, 4000); break; }
+      purgeArmed = false;
+      api('purge').then(() => { pending = []; savePending(); state = { raceStart: null, finishes: {} }; saveState(); sync.loc = {};
+        autoSeen = {}; saveAuto(); toast('已清除所有測試資料'); closeSheet(); render(); }).catch(err => toast(err.message));
+      break;
     case 'copy-link': {
       const url = `${location.origin}${location.pathname}#k=${encodeURIComponent(sync.key)}`;
       (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject())
@@ -1029,7 +1171,10 @@ document.addEventListener('change', e => {
     if (v) cfg.names[+e.target.dataset.r] = v; else delete cfg.names[+e.target.dataset.r];
     sharedChanged(); openSettings(); render();
   }
-  if (a === 'set-me') { cfg.me = +e.target.value; saveCfg(); render(); }
+  if (a === 'set-me') {
+    cfg.me = +e.target.value || null; saveCfg(); render(); keepHashForIOS(); refreshSetup();
+    if (push.state === 'on') pushInit();
+  }
   if (a === 'set-start' && e.target.value) {
     cfg.planStart = new Date(e.target.value + ':00+08:00').toISOString(); sharedChanged(); openSettings(); render();
   }
@@ -1051,6 +1196,7 @@ document.addEventListener('input', e => {
 
 showTab('me');
 // 每 15 秒同步一次；切回 app 時馬上同步
+pushInit();
 doSync();
 setInterval(() => { if (!document.hidden) doSync(); }, 15000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) doSync(); });
