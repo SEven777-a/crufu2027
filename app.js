@@ -12,7 +12,9 @@ const LEVEL_COLOR = { 低: '#22c55e', 中: '#f59e0b', 難: '#ef4444' };
 const CAR_COLOR = { 1: '#e5484d', 2: '#3b82f6' };
 // 地圖圖示：icons/ 裡每位跑者一張頭像（runner1～10.png）、兩台車各一張；原始大圖在專案的 icons_src/
 const ICONS = { runner: r => `icons/runner${r}.png`, car1: 'icons/car1.png', car2: 'icons/car2.png' };
-const LS_CFG = 'crufu.cfg.v1', LS_STATE = 'crufu.state.v1';
+// 模擬模式（網址加 ?sim，sim.js 提供假資料）的存檔加 sim. 前綴，不會蓋掉正式的設定與隊伍密碼
+const LS_PRE = window.CRUFU_SIM ? 'sim.' : '';
+const LS_CFG = LS_PRE + 'crufu.cfg.v1', LS_STATE = LS_PRE + 'crufu.state.v1';
 
 // ---------- 儲存 ----------
 function load(key, def) {
@@ -40,7 +42,7 @@ const saveState = () => save(LS_STATE, state);
 // ---------- 雲端同步（Supabase 的 team 函式） ----------
 // 隊伍密碼從隊友連結的 #k=… 帶進來，存在這支手機；管理員密碼只有隊長手機有
 const API = 'https://ifeclpphlctouqfzbdsb.supabase.co/functions/v1/team';
-const LS_KEY = 'crufu.key.v1', LS_PIN = 'crufu.pin.v1', LS_PEND = 'crufu.pending.v1';
+const LS_KEY = LS_PRE + 'crufu.key.v1', LS_PIN = LS_PRE + 'crufu.pin.v1', LS_PEND = LS_PRE + 'crufu.pending.v1';
 const SHARED = ['planStart', 'paces', 'names', 'order', 'assign', 'sub'];   // 全隊共用、只有管理員能改的設定
 const lsGet = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
 const lsSet = (k, v) => { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) { /* 存不了就算了 */ } };
@@ -51,7 +53,7 @@ try { pending = JSON.parse(localStorage.getItem(LS_PEND)) || []; } catch (e) { p
 const savePending = () => lsSet(LS_PEND, pending.length ? JSON.stringify(pending) : '');
 {
   const m = location.hash.match(/[#&]k=([^&]+)/);
-  if (m) { sync.key = decodeURIComponent(m[1]); lsSet(LS_KEY, sync.key); history.replaceState(null, '', location.pathname + location.search); }
+  if (m && !window.CRUFU_SIM) { sync.key = decodeURIComponent(m[1]); lsSet(LS_KEY, sync.key); history.replaceState(null, '', location.pathname + location.search); }
 }
 const canEdit = () => !sync.key || sync.admin;
 
