@@ -99,6 +99,13 @@ h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin: 20px 0 8px;
   background: rgba(20,22,26,.92); border-radius: 14px; padding: 10px 12px; backdrop-filter: blur(6px); }
 .map-btns { position: absolute; right: 10px; bottom: 70px; z-index: 500; display: flex; flex-direction: column; gap: 8px; }
 .map-btns button { background: rgba(20,22,26,.92); border-radius: 12px; padding: 8px 10px; font-size: 12px; }
+.map-btns button.on { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+/* 隊友小頭像：頭像＋名字·幾分鐘前；自己用黃框 */
+.crew-pin { position: absolute; transform: translate(-50%, -18px); display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.crew-pin .av { width: 34px; height: 34px; border-radius: 50%; border: 3px solid; background: #282b32; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.crew-pin .av img { width: 100%; height: 100%; object-fit: cover; display: block; image-rendering: pixelated; }
+.crew-pin.me .av { width: 40px; height: 40px; }
+.crew-pin span { background: rgba(17,17,17,.85); color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 6px; white-space: nowrap; }
 .km-pin { background: #111; color: #ddd; border: 1px solid #555; border-radius: 6px; font: 600 10px sans-serif;
   text-align: center; line-height: 16px; }
 /* 棒次編號：外層 0×0 給 Leaflet 定位，內層置中；地圖容器的 pins-md／pins-lg 依縮放放大 */
@@ -212,6 +219,7 @@ select option:disabled { color: #666; }
   <div class="map-btns">
     <button id="btn-fit">全程</button>
     <button id="btn-follow">跑者</button>
+    <button id="btn-crew">隊友</button>
     <button id="btn-base">街道</button>
   </div>
   <div id="map-demo"></div>
@@ -232,6 +240,6 @@ select option:disabled { color: #666; }
 <script src="data.js?v=8"></script>
 <!-- 網址加 ?sim 進入模擬模式（假的 10 人比賽，不連真的資料庫） -->
 <script>if (/[?&]sim\b/.test(location.search)) document.write('<script src="sim.js?v=1"><\/script>');</script>
-<script src="app.js?v=11"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>

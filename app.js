@@ -33,6 +33,7 @@ const cfg = load(LS_CFG, {
   sub: {},                                  // 受傷代跑的棒次 {棒次: true}，允許同一輪有人多跑
   demo: true,                               // 示範模式：用模擬時間與模擬交棒紀錄
   demoHours: 7.5,                           // 示範模式的「現在」＝出發後幾小時
+  showCrew: false,                          // 地圖顯示全隊每個人的位置（只存在這支手機）
   mapStyle: 'street',                       // 地圖底圖：street 街道（類似 Google 地圖）／dark 深色／sat 衛星
 });
 let state = load(LS_STATE, { raceStart: null, finishes: {} });  // 真實比賽紀錄
@@ -637,6 +638,35 @@ function carPos(c, now, sch) {
   return null;
 }
 const carMarkers = {};
+// 隊友：地圖按「隊友」後，10 分鐘內有回報的人都用小頭像標在自己的位置（正在跑的人已經有大頭像，不重複；疊在車子圖示上面）
+const crewMarkers = {};
+function crewPoints(now, run) {
+  if (cfg.demo || !cfg.showCrew) return [];
+  return RUNNERS.filter(r => !run || run.runner !== r).map(r => {
+    const a = sync.loc[String(r)], last = a && a[a.length - 1];
+    return last && now - last.t < CAR_FRESH ? { r, ...last } : null;
+  }).filter(Boolean);
+}
+function updateCrew(now, run) {
+  const pts = crewPoints(now, run), shown = new Set(pts.map(p => p.r));
+  for (const r in crewMarkers) if (!shown.has(+r)) crewMarkers[r].remove();
+  // 50 m 內的人算同一群（例如都在車上），排成每列 3 人的格子，名字下面不寫時間以免擠在一起
+  const groups = [];
+  for (const p of pts) {
+    const g = groups.find(g => distM(g[0], p) < 50);
+    if (g) g.push(p); else groups.push([p]);
+  }
+  for (const g of groups) g.forEach((p, k) => {
+    const cols = Math.min(3, g.length), x = (k % cols - (cols - 1) / 2) * 52, y = Math.floor(k / cols) * 60;
+    const me = p.r === cfg.me, color = me ? 'var(--accent)' : CAR_COLOR[carOfRunner(p.r)];
+    const html = `<div class="crew-pin${me ? ' me' : ''}" style="margin-left:${x}px;margin-top:${y}px"><div class="av" style="border-color:${color}"><img src="${ICONS.runner(p.r)}" alt=""></div>
+      <span>${me ? '我' : runnerName(p.r)}${g.length > 1 ? '' : ` · ${agoText(p.t)}`}</span></div>`;
+    (crewMarkers[p.r] ||= L.marker([0, 0], { zIndexOffset: me ? 960 : 950 }))
+      .setIcon(L.divIcon({ className: 'pin-wrap', iconSize: [0, 0], html }))
+      .setLatLng([g[0].lat, g[0].lon]).addTo(map);
+  });
+  return pts;
+}
 function updateCars(now, sch) {
   for (const c of [1, 2]) {
     const p = !cfg.demo && carPos(c, now, sch);
@@ -649,11 +679,14 @@ function updateCars(now, sch) {
       .bindTooltip(`Car${c} · ${p.how} · ${agoText(p.t)}`).setLatLng([p.lat, p.lon]).addTo(map);
   }
 }
+const crewBtn = () => document.getElementById('btn-crew').classList.toggle('on', !!cfg.showCrew);
 function renderMap(now, sch) {
   document.getElementById('map-demo').innerHTML = demoBar();
   if (!map) return;
   updateCars(now, sch);
   const run = sch.find(s => s.status === 'run');
+  updateCrew(now, run);
+  crewBtn();
   // 已完成淡化、未開始半透明，進行中最亮
   sch.forEach((s, i) => legLines[i].setStyle({ opacity: s.status === 'done' ? 0.25 : s.status === 'run' ? 1 : 0.6,
     weight: s.status === 'run' ? 8 : 6 }));
@@ -855,6 +888,18 @@ document.addEventListener('click', e => {
   if (e.target.id === 'sheet-bg') return closeSheet();
   if (e.target.id === 'btn-fit') { follow = false; return fitAll(); }
   if (e.target.id === 'btn-follow') { follow = true; return render(); }
+  if (e.target.id === 'btn-crew') {
+    cfg.showCrew = !cfg.showCrew; saveCfg(); render();
+    if (!cfg.showCrew) return;
+    const now = nowMs(), pts = crewPoints(now, schedule(now, raceState(now)).find(s => s.status === 'run'));
+    if (cfg.demo) return toast('示範模式不顯示真實位置，到設定關掉示範模式');
+    if (!sync.key) return toast('還沒連上隊伍，看不到隊友位置');
+    if (!pts.length) return toast('目前沒有隊友在 10 分鐘內回報位置');
+    follow = false;
+    if (pts.length === 1) map.setView([pts[0].lat, pts[0].lon], 15);
+    else map.fitBounds(pts.map(p => [p.lat, p.lon]), { padding: [60, 60], maxZoom: 16 });
+    return toast(`顯示 ${pts.length} 位隊友的位置`);
+  }
   if (e.target.id === 'btn-base') { const ks = Object.keys(BASES); return setBase(ks[(ks.indexOf(cfg.mapStyle) + 1) % ks.length]); }
   if (e.target.closest('a')) return;                 // 導航連結交給瀏覽器開，不要觸發外層
   const a = e.target.closest('[data-act]');
