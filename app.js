@@ -260,10 +260,15 @@ function renderMe(now, sch) {
   } else {
     const prev = sch[next.n - 2];
     hero = `<div class="hero car${next.car}">
-      <div class="label">你的下一棒 · 第 ${next.n} 棒 · Car${next.car} · 距離起跑還有</div>
-      <div class="big num" data-countdown="${next.start}">${fmtCountdown((next.start - now) / 1000)}</div>
-      <div class="row"><span>推估 ${fmtDT(next.start)} 起跑</span><span>${prev ? `接 ${runnerName(prev.runner)} 的棒` : '第一棒'}</span></div>
-      <div style="font-size:12px;opacity:.8;margin-top:4px">${st.raceStart ? `比原計畫 ${fmtDelta(next.start - next.planStart)} · ` : ''}依前面各棒的配速與實際交棒時間推算，會隨比賽更新</div></div>`;
+      <div class="label">你的下一棒 · 第 ${next.n} 棒 · Car${next.car}</div>
+      <div class="cd-row"><span class="cd-label">距離起跑還有</span><span class="big num" data-countdown="${next.start}">${fmtCountdown((next.start - now) / 1000)}</span></div>
+      <div class="handoff">
+        ${prev ? runnerFig(runnerName(prev.runner), prev.car) : '<div class="fig"><div class="bib start">起點</div></div>'}
+        <svg class="handoff-arrow" viewBox="0 0 48 24" aria-hidden="true"><path d="M2 12h40M32 4l10 8-10 8" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        ${runnerFig('我', next.car, true)}
+      </div>
+      <div class="handoff-time">推估 <b class="num">${fmtDT(next.start)}</b> 起跑</div>
+      <div class="handoff-sub">${st.raceStart ? `比原計畫 ${fmtDelta(next.start - next.planStart)}` : `原計畫 ${fmtDT(next.planStart)}`} · 依配速與實際交棒推算</div></div>`;
   }
   const focus = next || mine[mine.length - 1];
   const legCard = focus ? `<div class="card">
@@ -289,6 +294,10 @@ function renderMe(now, sch) {
     ${hero}${carTaskCard(sch)}${legCard}<h2>我的棒次</h2>${list}`;
 }
 
+
+// 交棒圖示：跑者剪影＋號碼布（號碼布文字用該棒所屬車的顏色）
+const RUNNER_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="14" cy="4" r="2.2"/><path d="M10 8.5l4-1.5 2.5 3.5 3 1-.6 1.8-4-1.3-1.4-1.9-1.2 3.6 2.7 2.4V22h-2v-5l-3-2.6-1.6 3.9L4 21l-.8-1.8 3.9-1.6 2.4-5.8-1.8.8-1 2.6-1.8-.7 1.4-3.6z"/></svg>';
+const runnerFig = (label, car, me) => `<div class="fig${me ? ' me' : ''}">${RUNNER_SVG}<div class="bib" style="color:${CAR_COLOR[car]}">${esc(label)}</div></div>`;
 
 // 本車任務：本車在跑就顯示下一個交接點；本車空檔就顯示下一個任務與剩餘時間
 function carTaskCard(sch) {
