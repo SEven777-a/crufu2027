@@ -30,6 +30,7 @@ const cfg = load(LS_CFG, {
   sub: {},                                  // 受傷代跑的棒次 {棒次: true}，允許同一輪有人多跑
   demo: true,                               // 示範模式：用模擬時間與模擬交棒紀錄
   demoHours: 7.5,                           // 示範模式的「現在」＝出發後幾小時
+  mapStyle: 'street',                       // 地圖底圖：street 街道（類似 Google 地圖）／dark 深色／sat 衛星
 });
 let state = load(LS_STATE, { raceStart: null, finishes: {} });  // 真實比賽紀錄
 const saveCfg = () => save(LS_CFG, cfg);
@@ -70,6 +71,8 @@ function fmtDelta(ms) {
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const runnerName = r => cfg.names[r] ? esc(cfg.names[r]) : `${r} 號`;
 // 導航：用 Google 地圖開車路線到指定座標
+// 導航圖示：一般導航 app 常見的斜箭頭
+const NAV_ICON = '<svg class="nav-ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21 3L3 10.5l7.2 2.3L12.5 20z"/></svg>';
 const navUrl = ([lat, lon]) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`;
 
 // ---------- 配速模型：坡度修正 ----------
@@ -149,7 +152,7 @@ function blocks(sch) {
     const legs = sch.slice(b * 5, b * 5 + 5), last = legs[4], next = sch[b * 5 + 10];
     const status = legs.every(s => s.status === 'done') ? 'done' : legs.some(s => s.status !== 'todo') ? 'run' : 'todo';
     return { car: b % 2 ? 2 : 1, legs, start: legs[0].start, end: last.end, status, next,
-      idle: next ? next.start - last.end : null, moveKm: next ? next.L.startKm - last.L.endKm : null };
+      idle: next ? next.start - last.end : null };
   });
 }
 
@@ -233,7 +236,7 @@ function toast(msg) {
 
 // ---------- 分頁：我 ----------
 function renderMe(now, sch) {
-  const el = document.getElementById('tab-me');
+  const el = document.getElementById('tab-me'), st = raceState(now);
   if (!cfg.me) {
     el.innerHTML = `${demoBar()}<h1>你是幾號？</h1><p class="muted">選了之後，這頁會顯示你的下一棒倒數與路況。之後可以在設定裡改。</p>
       <div class="pick">${RUNNERS.map(r => `<button data-act="pick-me" data-v="${r}">${r}</button>`).join('')}</div>`;
@@ -257,9 +260,10 @@ function renderMe(now, sch) {
   } else {
     const prev = sch[next.n - 2];
     hero = `<div class="hero car${next.car}">
-      <div class="label">你的下一棒 · 第 ${next.n} 棒 · Car${next.car}</div>
+      <div class="label">你的下一棒 · 第 ${next.n} 棒 · Car${next.car} · 距離起跑還有</div>
       <div class="big num" data-countdown="${next.start}">${fmtCountdown((next.start - now) / 1000)}</div>
-      <div class="row"><span>預計 ${fmtDT(next.start)} 起跑</span><span>${prev ? `上一棒 ${runnerName(prev.runner)}` : '第一棒'}</span></div></div>`;
+      <div class="row"><span>推估 ${fmtDT(next.start)} 起跑</span><span>${prev ? `接 ${runnerName(prev.runner)} 的棒` : '第一棒'}</span></div>
+      <div style="font-size:12px;opacity:.8;margin-top:4px">${st.raceStart ? `比原計畫 ${fmtDelta(next.start - next.planStart)} · ` : ''}依前面各棒的配速與實際交棒時間推算，會隨比賽更新</div></div>`;
   }
   const focus = next || mine[mine.length - 1];
   const legCard = focus ? `<div class="card">
@@ -282,18 +286,9 @@ function renderMe(now, sch) {
   }).join('');
   el.innerHTML = `${demoBar()}
     <div class="row"><h1>${runnerName(cfg.me)}</h1><button class="chip plain" data-act="settings">⚙ 設定</button></div>
-    ${nowStrip(now, sch)}${hero}${carTaskCard(sch)}${legCard}<h2>我的棒次</h2>${list}`;
+    ${hero}${carTaskCard(sch)}${legCard}<h2>我的棒次</h2>${list}`;
 }
 
-// 頂部狀態列：現在誰在跑（自己在跑時不顯示，大卡已經有）
-function nowStrip(now, sch) {
-  const run = sch.find(s => s.status === 'run');
-  if (!run || run.runner === cfg.me) return '';
-  const p = progressOf(run, now);
-  return `<button class="strip" data-act="goto-legs"><span class="badge sm car${run.car}">${run.n}</span>
-    <span class="grow">現在 <b>${runnerName(run.runner)}</b> · ${(p.frac * 100).toFixed(0)}%</span>
-    <span class="num">${fmtT(run.end)} 交棒 ›</span></button>`;
-}
 
 // 本車任務：本車在跑就顯示下一個交接點；本車空檔就顯示下一個任務與剩餘時間
 function carTaskCard(sch) {
@@ -302,7 +297,7 @@ function carTaskCard(sch) {
   const run = sch.find(s => s.status === 'run');
   const nextMine = sch.find(s => s.car === car && s.status !== 'done');
   if (!nextMine) return `<div class="card"><div class="row"><b>Car${car} 任務</b><span class="muted">本車棒次都完成了</span></div>
-    <a class="btn ghost" style="margin-top:12px" href="${navUrl(D.legs[29].end)}" target="_blank" rel="noopener">🧭 導航到終點七星潭</a></div>`;
+    <a class="btn ghost" style="margin-top:12px" href="${navUrl(D.legs[29].end)}" target="_blank" rel="noopener">${NAV_ICON} 導航到終點七星潭</a></div>`;
   let status, rows, dest, destName;
   if (run && run.car === car) {
     const nx = sch[run.n];                       // 下一棒（可能換車或已是終點）
@@ -324,7 +319,7 @@ function carTaskCard(sch) {
       <div class="kv"><span>剩餘</span><span class="num"><b data-countdown="${nextMine.start}">${fmtCountdown((nextMine.start - nowMs()) / 1000)}</b></span></div>`;
   }
   return `<div class="card"><div class="row"><b><span class="dot car${car}"></span>Car${car} 任務</b><span class="muted" style="font-size:13px">${status}</span></div>
-    ${rows}<a class="btn ghost" style="margin-top:12px" href="${navUrl(dest)}" target="_blank" rel="noopener">🧭 導航到${destName}</a></div>`;
+    ${rows}<a class="btn ghost" style="margin-top:12px" href="${navUrl(dest)}" target="_blank" rel="noopener">${NAV_ICON} 導航到${destName}</a></div>`;
 }
 
 // ---------- 分頁：棒次 ----------
@@ -338,18 +333,19 @@ function legRow(s, now) {
     <div class="badge car${s.car}">${s.n}</div>
     <div class="mid"><div><b>${runnerName(s.runner)}</b> ${chips(s)}</div><div class="t">${s.L.km.toFixed(1)} km · +${s.L.gain}/−${s.L.loss} m</div></div>
     <div class="right">${right}</div>
-    ${s.status === 'done' ? '' : `<a class="nav-mini" href="${navUrl(s.L.start)}" target="_blank" rel="noopener" aria-label="導航到第 ${s.n} 棒起點">🧭</a>`}</div>`;
+    ${s.status === 'done' ? '' : `<a class="nav-mini" href="${navUrl(s.L.start)}" target="_blank" rel="noopener" aria-label="導航到第 ${s.n} 棒起點">${NAV_ICON}</a>`}</div>`;
 }
 // 兩車輪班與空檔
 function shiftCard(sch) {
   const rows = blocks(sch).map(k => {
     const tag = k.status === 'done' ? ' <span class="chip plain">完成</span>' : k.status === 'run' ? ' <span class="chip plain">進行中</span>' : '';
-    const after = k.next
-      ? `之後空檔 <b>${fmtLong(k.idle / 1000)}</b> · 開車約 ${k.moveKm.toFixed(0)} km 到第 ${k.next.n} 棒起點`
-      : '本車最後一段，結束後前往終點';
+    const after = k.next ? `之後空檔 <b>${fmtLong(k.idle / 1000)}</b>` : '本車最後一段，結束後前往終點';
+    // 下一個換車地點＝本車下一段第一棒的起點（最後一段就是終點）
+    const dest = k.next ? k.next.L.start : D.legs[29].end;
+    const nav = k.status === 'done' ? '' : `<a class="nav-mini" href="${navUrl(dest)}" target="_blank" rel="noopener" aria-label="導航到${k.next ? `第 ${k.next.n} 棒起點` : '終點'}">${NAV_ICON}</a>`;
     return `<div class="shift ${k.status}"><div class="row"><span><span class="badge sm car${k.car}">C${k.car}</span>
       第 ${k.legs[0].n}–${k.legs[4].n} 棒${tag}</span><span class="num">${fmtT(k.start)}–${fmtT(k.end)}</span></div>
-      <div class="t">${after}</div></div>`;
+      <div class="row"><span class="t">${after}</span>${nav}</div></div>`;
   }).join('');
   return `<h2>兩車輪班與空檔</h2><div class="card" style="padding:4px 16px">${rows}</div>`;
 }
@@ -368,7 +364,7 @@ function renderLegs(now, sch, st) {
     hero = `<div class="hero car${run.car}">
       <div class="label">當前跑者 · 第 ${run.n} 棒 · Car${run.car} · ${run.L.km.toFixed(1)} km ${run.L.level}</div>
       <div class="name">${runnerName(run.runner)}</div>
-      <div class="row" style="margin-top:8px"><span class="big num" style="font-size:38px">${(p.frac * 100).toFixed(0)}%</span>
+      <div class="row" style="margin-top:8px"><span><span style="font-size:12px;opacity:.85">本棒進度</span><br><span class="big num" style="font-size:38px">${(p.frac * 100).toFixed(0)}%</span></span>
         <span style="text-align:right">預計交棒<br><b class="num" style="font-size:28px">${fmtT(run.end)}</b></span></div>
       <div class="bar"><i style="width:${(p.frac * 100).toFixed(0)}%"></i></div>
       <div class="row" style="font-size:13px"><span>已跑 <span class="num" data-elapsed="${run.start}">${fmtDur((now - run.start) / 1000)}</span>（推估位置）</span>
@@ -389,12 +385,15 @@ function renderLegs(now, sch, st) {
   }).join('');
   el.innerHTML = `${demoBar()}<div class="row"><h1>棒次</h1><button class="chip plain" data-act="settings">⚙ 設定</button></div>
     ${hero}
-    <div class="stats" style="margin:0 0 12px">
-      <div class="stat"><b>${done.length}/30</b><span>完成棒數</span></div>
-      <div class="stat"><b>${ref ? fmtDelta(delta) : '—'}</b><span>比預定</span></div>
-      <div class="stat"><b class="num ${last.end > cutoff ? 'slow' : ''}">${fmtT(last.end)}</b><span>預計完賽</span></div>
+    <div class="hero idle total">
+      <div class="row"><span class="label">全隊總進度</span><span class="label">完成 ${done.length}/30 棒</span></div>
+      <div class="row" style="align-items:flex-end;margin-top:4px">
+        <span class="big num" style="font-size:34px">${(kmDone / D.totalKm * 100).toFixed(0)}%</span>
+        <span style="text-align:right">預計完賽<br><b class="num ${last.end > cutoff ? 'slow' : ''}" style="font-size:24px">${fmtT(last.end)}</b></span></div>
+      <div class="bar"><i style="width:${(kmDone / D.totalKm * 100).toFixed(1)}%"></i></div>
+      <div class="row" style="font-size:13px"><span>${kmDone.toFixed(1)} / ${D.totalKm} km · 比預定 ${ref ? fmtDelta(delta) : '—'}</span>
+        <span>關門 ${fmtT(cutoff)} · ${last.end > cutoff ? '<span class="slow">超過關門！</span>' : `餘裕 ${fmtLong((cutoff - last.end) / 1000)}`}</span></div>
     </div>
-    <div class="muted" style="font-size:13px;margin-bottom:12px">已跑 ${kmDone.toFixed(1)} / ${D.totalKm} km · 關門 ${fmtDT(cutoff)}，預計餘裕 ${last.end > cutoff ? '<span class="slow">超過關門！</span>' : fmtLong((cutoff - last.end) / 1000)}</div>
     ${issues.errors.length ? `<div class="issues">⚠ 違反大會規定（每人每輪剛好一棒）：<br>${issues.errors.join('<br>')}</div>` : ''}
     ${issues.warns.length ? `<div class="issues warn">注意：<br>${issues.warns.join('<br>')}</div>` : ''}
     ${shiftCard(sch)}
@@ -414,8 +413,7 @@ const pinIcon = (txt, major) => L.divIcon({ className: 'pin-wrap', iconSize: [0,
 function initMap() {
   map = L.map('map', { zoomControl: false, attributionControl: true });
   // Esri 街道圖磚（免金鑰；OSM 會擋 file:// 開啟的網頁），用 CSS 濾鏡轉成深色（見 index.html 的 .dark-tiles）
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
-    { maxZoom: 19, className: 'dark-tiles', attribution: 'Tiles © Esri' }).addTo(map);
+  setBase(cfg.mapStyle);
   // 黑色外框墊在路線下面，深色底圖上比較看得清楚
   L.polyline(T.map(p => [p[0], p[1]]), { color: '#000', weight: 11, opacity: 0.6, interactive: false }).addTo(map);
   for (const Lg of D.legs) {
@@ -437,6 +435,19 @@ function initMap() {
   flagMarker = L.circleMarker([0, 0], { radius: 9, color: '#fff', weight: 3, fillColor: '#111', fillOpacity: 1 });
   fitAll();
   map.on('dragstart', () => { follow = false; });
+}
+// 底圖：街道（亮色，配色接近 Google 地圖）／深色（同一張圖反相）／衛星
+const BASES = { street: '街道', dark: '深色', sat: '衛星' };
+let baseLayer;
+function setBase(k) {
+  if (!BASES[k]) k = 'street';
+  if (baseLayer) baseLayer.remove();
+  const svc = k === 'sat' ? 'World_Imagery' : 'World_Street_Map';
+  baseLayer = L.tileLayer(`https://server.arcgisonline.com/ArcGIS/rest/services/${svc}/MapServer/tile/{z}/{y}/{x}`,
+    { maxZoom: 19, className: k === 'dark' ? 'dark-tiles' : '', attribution: 'Tiles © Esri' }).addTo(map);
+  baseLayer.bringToBack();
+  cfg.mapStyle = k; saveCfg();
+  document.getElementById('btn-base').textContent = BASES[k];
 }
 function fitAll() { map.fitBounds(L.latLngBounds(T.map(p => [p[0], p[1]])), { padding: [20, 20] }); updatePins(); }
 function updatePins() {
@@ -516,8 +527,8 @@ function renderLegSheet() {
     ${nightBox(s)}
     <div style="margin-top:12px">${elevSvg(s.L.startKm, s.L.endKm)}</div>
     <div class="btn-row">
-      <a class="btn ghost" href="${navUrl(s.L.start)}" target="_blank" rel="noopener">🧭 導航到起點</a>
-      <a class="btn ghost" href="${navUrl(s.L.end)}" target="_blank" rel="noopener">🧭 導航到終點</a>
+      <a class="btn ghost" href="${navUrl(s.L.start)}" target="_blank" rel="noopener">${NAV_ICON} 導航到起點</a>
+      <a class="btn ghost" href="${navUrl(s.L.end)}" target="_blank" rel="noopener">${NAV_ICON} 導航到終點</a>
     </div>
     <div class="card" style="margin-top:12px">
       ${runnerPicker(s, sch)}
@@ -634,6 +645,7 @@ document.addEventListener('click', e => {
   if (e.target.id === 'sheet-bg') return closeSheet();
   if (e.target.id === 'btn-fit') { follow = false; return fitAll(); }
   if (e.target.id === 'btn-follow') { follow = true; return render(); }
+  if (e.target.id === 'btn-base') { const ks = Object.keys(BASES); return setBase(ks[(ks.indexOf(cfg.mapStyle) + 1) % ks.length]); }
   if (e.target.closest('a')) return;                 // 導航連結交給瀏覽器開，不要觸發外層
   const a = e.target.closest('[data-act]');
   if (!a || a.tagName === 'SELECT' || a.tagName === 'INPUT') return;

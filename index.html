@@ -119,6 +119,10 @@ h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin: 20px 0 8px;
 .rules .kv b { white-space: nowrap; }
 .rules .kv span { font-size: 13px; text-align: right; }
 .leaflet-container { font-family: inherit; }
+.nav-ico { width: 1.1em; height: 1.1em; vertical-align: -0.15em; }
+.nav-mini .nav-ico { width: 18px; height: 18px; color: #60a5fa; }
+.shift .nav-mini { width: 32px; height: 32px; }
+.hero.total .big { font-size: 34px; }
 .dark-tiles { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); }
 
 /* 底部彈出視窗 */
@@ -183,6 +187,7 @@ select option:disabled { color: #666; }
   <div class="map-btns">
     <button id="btn-fit">全程</button>
     <button id="btn-follow">跑者</button>
+    <button id="btn-base">街道</button>
   </div>
   <div id="map-demo"></div>
 </section>
@@ -199,7 +204,7 @@ select option:disabled { color: #666; }
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= 改版時加一，避免手機讀到舊的快取 -->
-<script src="data.js?v=5"></script>
-<script src="app.js?v=5"></script>
+<script src="data.js?v=6"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>
