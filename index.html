@@ -131,13 +131,13 @@ h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin: 20px 0 8px;
 .cd-label { font-size: 14px; opacity: .9; }
 .handoff { display: flex; align-items: center; justify-content: center; gap: 18px; margin: 14px 0 10px; }
 .handoff-arrow { width: 48px; height: 24px; opacity: .85; flex: none; }
-.fig { position: relative; width: 64px; height: 64px; flex: none; }
-.fig > svg { width: 64px; height: 64px; color: rgba(255,255,255,.55); }
-.fig.me > svg { color: #fff; }
-.fig .bib { position: absolute; left: 50%; top: 52%; transform: translate(-50%, -50%); background: #fff; border-radius: 7px;
+.fig { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: none; min-width: 64px; }
+.fig > img { height: 84px; width: auto; display: block; filter: drop-shadow(0 2px 3px rgba(0,0,0,.3)); }
+.fig:not(.me) > img { opacity: .8; }
+.fig .bib { background: #fff; border-radius: 7px;
   padding: 3px 7px; font-size: 13px; font-weight: 800; white-space: nowrap; max-width: 84px; overflow: hidden;
   text-overflow: ellipsis; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
-.fig .bib.start { color: #111; position: static; transform: none; display: inline-block; margin-top: 20px; }
+.fig .bib.start { color: #111; }
 .handoff-time { text-align: center; font-size: 15px; }
 .handoff-time b { font-size: 18px; }
 .handoff-sub { text-align: center; font-size: 12px; margin-top: 4px; color: rgba(255,255,255,.85); }
@@ -230,6 +230,6 @@ select option:disabled { color: #666; }
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= 改版時加一，避免手機讀到舊的快取 -->
 <script src="data.js?v=8"></script>
-<script src="app.js?v=8"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

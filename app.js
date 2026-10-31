@@ -407,9 +407,9 @@ function renderMe(now, sch) {
       <div class="label">你的下一棒 · 第 ${next.n} 棒 · Car${next.car}</div>
       <div class="cd-row"><span class="cd-label">距離起跑還有</span><span class="big num" data-countdown="${next.start}">${fmtCountdown((next.start - now) / 1000)}</span></div>
       <div class="handoff">
-        ${prev ? runnerFig(runnerName(prev.runner), prev.car) : '<div class="fig"><div class="bib start">起點</div></div>'}
+        ${prev ? runnerFig(prev.runner, runnerName(prev.runner), prev.car) : '<div class="fig"><div class="bib start">起點</div></div>'}
         <svg class="handoff-arrow" viewBox="0 0 48 24" aria-hidden="true"><path d="M2 12h40M32 4l10 8-10 8" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        ${runnerFig('我', next.car, true)}
+        ${runnerFig(cfg.me, '我', next.car, true)}
       </div>
       <div class="handoff-time">推估 <b class="num">${fmtDT(next.start)}</b> 起跑</div>
       <div class="handoff-sub">${st.raceStart ? `比原計畫 ${fmtDelta(next.start - next.planStart)}` : `原計畫 ${fmtDT(next.planStart)}`} · 依配速與實際交棒推算</div></div>`;
@@ -439,9 +439,8 @@ function renderMe(now, sch) {
 }
 
 
-// 交棒圖示：跑者剪影＋號碼布（號碼布文字用該棒所屬車的顏色）
-const RUNNER_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="14" cy="4" r="2.2"/><path d="M10 8.5l4-1.5 2.5 3.5 3 1-.6 1.8-4-1.3-1.4-1.9-1.2 3.6 2.7 2.4V22h-2v-5l-3-2.6-1.6 3.9L4 21l-.8-1.8 3.9-1.6 2.4-5.8-1.8.8-1 2.6-1.8-.7 1.4-3.6z"/></svg>';
-const runnerFig = (label, car, me) => `<div class="fig${me ? ' me' : ''}">${RUNNER_SVG}<div class="bib" style="color:${CAR_COLOR[car]}">${esc(label)}</div></div>`;
+// 交棒圖示：跑者像素小人（icons/run<號碼>.png）＋名牌（文字用該棒所屬車的顏色）
+const runnerFig = (r, label, car, me) => `<div class="fig${me ? ' me' : ''}"><img src="icons/run${r}.png" alt=""><div class="bib" style="color:${CAR_COLOR[car]}">${esc(label)}</div></div>`;
 
 // 本車任務：本車在跑就顯示下一個交接點；本車空檔就顯示下一個任務與剩餘時間
 function carTaskCard(sch) {
@@ -612,24 +611,46 @@ function updatePins() {
   el.classList.toggle('pins-md', z >= 12 && z < 14);
   el.classList.toggle('pins-lg', z >= 14);
 }
-// 車子：車上指定一支手機用 OwnTracks 回報（u=car1／car2），30 分鐘內有回報才顯示
+// 車子位置：
+// 1) 車上有專用手機（u=car1／car2）且 10 分鐘內有回報 → 用它
+// 2) 否則用這台車上「沒在跑」的隊友推算：10 分鐘內有回報的人裡，找彼此 300 m 內聚最多人的一群，取平均位置
+// 3) 都沒有，專用手機 30 分鐘內有回報也先顯示
+const CAR_FRESH = 10 * 60e3, CREW_RADIUS = 300;
+const distM = (p, q) => Math.hypot((p.lat - q.lat) * 110540, (p.lon - q.lon) * 111320 * Math.cos(p.lat * Math.PI / 180));
+function carPos(c, now, sch) {
+  const a = sync.loc['car' + c], dev = a && a[a.length - 1];
+  if (dev && now - dev.t < CAR_FRESH) return { lat: dev.lat, lon: dev.lon, t: dev.t, how: '車上手機' };
+  const run = sch.find(s => s.status === 'run');
+  const crew = [...new Set(sch.filter(s => s.car === c).map(s => String(s.runner)))]
+    .filter(r => !run || String(run.runner) !== r);
+  const pts = crew.map(r => { const b = sync.loc[r]; return b && b[b.length - 1]; })
+    .filter(p => p && now - p.t < CAR_FRESH);
+  let best = [];
+  for (const p of pts) { const g = pts.filter(q => distM(p, q) < CREW_RADIUS); if (g.length > best.length) best = g; }
+  if (best.length) return {
+    lat: best.reduce((s, p) => s + p.lat, 0) / best.length, lon: best.reduce((s, p) => s + p.lon, 0) / best.length,
+    t: Math.max(...best.map(p => p.t)), how: `${best.length} 位隊友推算`,
+  };
+  if (dev && now - dev.t < 30 * 60e3) return { lat: dev.lat, lon: dev.lon, t: dev.t, how: '車上手機' };
+  return null;
+}
 const carMarkers = {};
-function updateCars(now) {
+function updateCars(now, sch) {
   for (const c of [1, 2]) {
-    const a = !cfg.demo && sync.loc['car' + c], last = a && a[a.length - 1];
-    if (!last || now - last.t > 30 * 60e3) { if (carMarkers[c]) carMarkers[c].remove(); continue; }
+    const p = !cfg.demo && carPos(c, now, sch);
+    if (!p) { if (carMarkers[c]) carMarkers[c].remove(); continue; }
     const html = ICONS['car' + c]
       ? `<div class="car-pin img" style="border-color:${CAR_COLOR[c]}"><img src="${ICONS['car' + c]}" alt=""></div>`
       : `<div class="car-pin" style="background:${CAR_COLOR[c]}">🚐<b>${c}</b></div>`;
     (carMarkers[c] ||= L.marker([0, 0], { zIndexOffset: 900 }))
       .setIcon(L.divIcon({ className: 'pin-wrap', iconSize: [0, 0], html }))
-      .bindTooltip(`Car${c} · ${agoText(last.t)}`).setLatLng([last.lat, last.lon]).addTo(map);
+      .bindTooltip(`Car${c} · ${p.how} · ${agoText(p.t)}`).setLatLng([p.lat, p.lon]).addTo(map);
   }
 }
 function renderMap(now, sch) {
   document.getElementById('map-demo').innerHTML = demoBar();
   if (!map) return;
-  updateCars(now);
+  updateCars(now, sch);
   const run = sch.find(s => s.status === 'run');
   // 已完成淡化、未開始半透明，進行中最亮
   sch.forEach((s, i) => legLines[i].setStyle({ opacity: s.status === 'done' ? 0.25 : s.status === 'run' ? 1 : 0.6,
