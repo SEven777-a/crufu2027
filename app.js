@@ -33,6 +33,7 @@ const cfg = load(LS_CFG, {
   sub: {},                                  // 受傷代跑的棒次 {棒次: true}，允許同一輪有人多跑
   demo: true,                               // 示範模式：用模擬時間與模擬交棒紀錄
   demoHours: 7.5,                           // 示範模式的「現在」＝出發後幾小時
+  testPoint: null,                          // 測試交接點 {lat, lon}：管理員測試自動交棒用，正式比賽前要取消
   showCrew: false,                          // 地圖顯示全隊每個人的位置（只存在這支手機）
   mapStyle: 'street',                       // 地圖底圖：street 街道（類似 Google 地圖）／dark 深色／sat 衛星
 });
@@ -44,7 +45,7 @@ const saveState = () => save(LS_STATE, state);
 // 隊伍密碼從隊友連結的 #k=… 帶進來，存在這支手機；管理員密碼只有隊長手機有
 const API = 'https://ifeclpphlctouqfzbdsb.supabase.co/functions/v1/team';
 const LS_KEY = LS_PRE + 'crufu.key.v1', LS_PIN = LS_PRE + 'crufu.pin.v1', LS_PEND = LS_PRE + 'crufu.pending.v1';
-const SHARED = ['planStart', 'paces', 'names', 'order', 'assign', 'sub'];   // 全隊共用、只有管理員能改的設定
+const SHARED = ['planStart', 'paces', 'names', 'order', 'assign', 'sub', 'testPoint'];   // 全隊共用、只有管理員能改的設定
 const lsGet = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
 const lsSet = (k, v) => { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) { /* 存不了就算了 */ } };
 const sync = { key: lsGet(LS_KEY), pin: lsGet(LS_PIN), admin: false, ok: false, err: '', last: 0,
@@ -105,7 +106,7 @@ async function doSync() {
     Object.assign(sync, { admin: j.admin, ok: true, err: '', last: Date.now(), watchAt: j.watchAt || null });
     if (j.config) {
       if (j.config.updated_at !== sync.cfgAt && !sync.cfgDirty) {
-        SHARED.forEach(k => { if (j.config.data[k] != null) cfg[k] = j.config.data[k]; });
+        SHARED.forEach(k => { if (j.config.data[k] !== undefined) cfg[k] = j.config.data[k]; });   // null 也要套用（例如取消測試交接點）
         sync.cfgAt = j.config.updated_at; saveCfg();
       }
     } else if (sync.admin) await pushConfig();     // 雲端還沒有設定：用管理員手機上的設定當初始值
@@ -515,7 +516,9 @@ function nightBox(s) {
   return `<div class="night">🌙 <b>夜間棒</b>（${fmtT(Date.parse(D.nightStart))}～隔天 ${fmtT(Date.parse(D.nightEnd))}）：跑者穿<b>反光背心</b>、戴<b>頭燈</b>、開<b>尾燈</b>，違規會整隊取消資格。在接力點等候的隊友也要穿反光背心。</div>`;
 }
 function demoBar() {
-  if (!cfg.demo) return '';
+  const tp = cfg.testPoint && !cfg.demo
+    ? `<div class="demo-bar"><span>🧪 測試交接點啟用中：自動交棒以「${fmtDT(cfg.testPoint.at)} 設定的位置」為終點，正式比賽前要取消</span><button data-act="settings">設定</button></div>` : '';
+  if (!cfg.demo) return tp;
   return `<div class="demo-bar"><span>示範模式：模擬時間 ${fmtDT(nowMs())}，交棒紀錄是假的</span><button data-act="settings">調整</button></div>`;
 }
 function toast(msg) {
@@ -972,7 +975,10 @@ function openSettings() {
       : sync.admin ? `<div class="kv"><span>管理員</span><span>已解鎖 <button class="chip plain" data-act="lock">登出</button></span></div>
         <button class="btn ghost" data-act="copy-link" style="margin-top:10px">複製隊友連結（含隊伍密碼）</button>
         <div class="muted" style="font-size:12px;padding-top:10px">正式發布前：清掉測試時的交棒紀錄、提醒紀錄和所有定位（名字、順序、配速、通知訂閱保留）。</div>
-        <button class="btn warn" data-act="purge" style="margin-top:8px">清除所有測試資料</button>`
+        <button class="btn warn" data-act="purge" style="margin-top:8px">清除所有測試資料</button>
+        <div class="muted" style="font-size:12px;padding-top:12px">測試交接點：把「目前這棒的終點」暫時改成你現在的位置，在家附近走一圈就能測剩 500 m 提醒與自動交棒。</div>
+        ${cfg.testPoint ? `<div class="kv"><span>🧪 啟用中（${fmtDT(cfg.testPoint.at)} 設定）</span><button class="chip plain" data-act="tp-clear">取消</button></div>`
+          : `<button class="btn ghost" data-act="tp-set" style="margin-top:8px">把測試交接點設在我現在的位置</button>`}`
       : `<div class="kv"><span>管理員密碼</span><span><input id="pin-in" type="password" style="width:100px" autocomplete="off"> <button class="chip plain" data-act="unlock">解鎖</button></span></div>
         <div class="muted" style="font-size:12px;padding-top:6px">名字、棒次順序、配速、出發時間由管理員設定，全隊同步；交棒誰都可以按。</div>`}
     </div>
@@ -1134,6 +1140,15 @@ document.addEventListener('click', e => {
       api('purge').then(() => { pending = []; savePending(); state = { raceStart: null, finishes: {} }; saveState(); sync.loc = {};
         autoSeen = {}; saveAuto(); toast('已清除所有測試資料'); closeSheet(); render(); }).catch(err => toast(err.message));
       break;
+    case 'tp-set':
+      if (!navigator.geolocation) { toast('這個瀏覽器拿不到位置'); break; }
+      toast('取得位置中…');
+      navigator.geolocation.getCurrentPosition(pos => {
+        cfg.testPoint = { lat: +pos.coords.latitude.toFixed(6), lon: +pos.coords.longitude.toFixed(6), at: Date.now() };
+        sharedChanged(); toast(`測試交接點已設定（誤差約 ${Math.round(pos.coords.accuracy)} m）`); openSettings(); render();
+      }, err => toast('拿不到位置：' + err.message), { enableHighAccuracy: true, timeout: 20000 });
+      break;
+    case 'tp-clear': cfg.testPoint = null; sharedChanged(); toast('已取消測試交接點'); openSettings(); render(); break;
     case 'copy-link': {
       const url = `${location.origin}${location.pathname}#k=${encodeURIComponent(sync.key)}`;
       (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject())
