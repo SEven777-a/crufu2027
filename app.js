@@ -1,5 +1,6 @@
-// CRUFU 2027 隊內追蹤 app（第一版：不接 GPS，用「交棒時間＋配速＋坡度」推估）
-// 資料：data.js（由 build_data.py 產生）；設定與比賽紀錄暫存在這支手機的 localStorage
+// CRUFU 2027 隊內追蹤 app
+// 資料：data.js（由 build_data.py 產生）；設定、交棒紀錄、GPS 透過 Supabase 的 team 函式全隊同步，
+// 本機 localStorage 當快取（沒訊號時照樣能看、能按交棒）
 'use strict';
 
 const D = window.CRUFU_DATA;
@@ -9,8 +10,8 @@ const RUNNERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 const OVERHEAD_SEC = 60;                   // 每棒交棒、找人的時間
 const LEVEL_COLOR = { 低: '#22c55e', 中: '#f59e0b', 難: '#ef4444' };
 const CAR_COLOR = { 1: '#e5484d', 2: '#3b82f6' };
-// 地圖自訂圖示：把圖檔放進 icons/ 再填路徑（例如 'icons/runner.png'），留空就用預設圓點
-const ICONS = { runner: '', car1: '', car2: '' };
+// 地圖圖示：icons/ 裡每位跑者一張頭像（runner1～10.png）、兩台車各一張；原始大圖在專案的 icons_src/
+const ICONS = { runner: r => `icons/runner${r}.png`, car1: 'icons/car1.png', car2: 'icons/car2.png' };
 const LS_CFG = 'crufu.cfg.v1', LS_STATE = 'crufu.state.v1';
 
 // ---------- 儲存 ----------
@@ -36,6 +37,141 @@ let state = load(LS_STATE, { raceStart: null, finishes: {} });  // 真實比賽�
 const saveCfg = () => save(LS_CFG, cfg);
 const saveState = () => save(LS_STATE, state);
 
+// ---------- 雲端同步（Supabase 的 team 函式） ----------
+// 隊伍密碼從隊友連結的 #k=… 帶進來，存在這支手機；管理員密碼只有隊長手機有
+const API = 'https://ifeclpphlctouqfzbdsb.supabase.co/functions/v1/team';
+const LS_KEY = 'crufu.key.v1', LS_PIN = 'crufu.pin.v1', LS_PEND = 'crufu.pending.v1';
+const SHARED = ['planStart', 'paces', 'names', 'order', 'assign', 'sub'];   // 全隊共用、只有管理員能改的設定
+const lsGet = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
+const lsSet = (k, v) => { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) { /* 存不了就算了 */ } };
+const sync = { key: lsGet(LS_KEY), pin: lsGet(LS_PIN), admin: false, ok: false, err: '', last: 0,
+  cfgAt: null, since: null, busy: false, again: false, cfgDirty: false, loc: {} };
+let pending = [];                          // 離線時按的交棒，連上後依序補送
+try { pending = JSON.parse(localStorage.getItem(LS_PEND)) || []; } catch (e) { pending = []; }
+const savePending = () => lsSet(LS_PEND, pending.length ? JSON.stringify(pending) : '');
+{
+  const m = location.hash.match(/[#&]k=([^&]+)/);
+  if (m) { sync.key = decodeURIComponent(m[1]); lsSet(LS_KEY, sync.key); history.replaceState(null, '', location.pathname + location.search); }
+}
+const canEdit = () => !sync.key || sync.admin;
+
+async function api(op, body = {}) {
+  const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ op, key: sync.key, pin: sync.pin || undefined, ...body }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(j.error || `連線錯誤 ${r.status}`), { status: r.status });
+  return j;
+}
+async function pushConfig() {
+  sync.cfgDirty = false;
+  try { await api('config', { data: Object.fromEntries(SHARED.map(k => [k, cfg[k]])) }); }
+  catch (e) { sync.cfgDirty = true; throw e; }
+}
+// 改了共用設定：存本機，管理員再推上雲端
+let pushTimer;
+function sharedChanged() {
+  saveCfg();
+  if (!sync.key) return;
+  sync.cfgDirty = true;
+  clearTimeout(pushTimer); pushTimer = setTimeout(doSync, 800);
+}
+async function doSync() {
+  if (!sync.key) return;
+  if (sync.busy) { sync.again = true; return; }
+  sync.busy = true;
+  try {
+    while (pending.length) {
+      try { await api(pending[0].op, pending[0]); }
+      catch (e) { if (e.status !== 400) throw e; }   // 參數錯誤的那筆丟掉，不要卡住後面
+      pending.shift(); savePending();
+    }
+    if (sync.cfgDirty && sync.admin) await pushConfig();
+    const j = await api('sync', { since: sync.since || undefined });
+    Object.assign(sync, { admin: j.admin, ok: true, err: '', last: Date.now() });
+    if (j.config) {
+      if (j.config.updated_at !== sync.cfgAt && !sync.cfgDirty) {
+        SHARED.forEach(k => { if (j.config.data[k] != null) cfg[k] = j.config.data[k]; });
+        sync.cfgAt = j.config.updated_at; saveCfg();
+      }
+    } else if (sync.admin) await pushConfig();     // 雲端還沒有設定：用管理員手機上的設定當初始值
+    const st = { raceStart: null, finishes: {} };
+    j.events.forEach(e => { const t = Date.parse(e.at); if (e.leg === 0) st.raceStart = t; else st.finishes[e.leg] = t; });
+    state = st; saveState();
+    if (st.raceStart && cfg.demo) { cfg.demo = false; saveCfg(); toast('比賽已開跑，自動關閉示範模式'); }
+    j.locations.forEach(addLoc);
+    sync.since = j.locations.length ? j.locations[j.locations.length - 1].received_at : (sync.since || j.now);
+  } catch (e) {
+    sync.ok = false; sync.err = e.message;
+  } finally {
+    sync.busy = false;
+    if (sync.again) { sync.again = false; setTimeout(doSync, 0); }
+  }
+  if (!document.getElementById('sheet-bg').classList.contains('open')) render();
+}
+// 交棒、取消交棒：先改本機畫面，再排進待送清單（沒訊號也不會丟）
+function record(op, leg, at) {
+  if (op === 'finish') { if (leg === 0) state.raceStart = at; else state.finishes[leg] = at; }
+  else delete state.finishes[leg];
+  saveState();
+  if (!sync.key) return;
+  pending.push({ op, leg, at: at ? new Date(at).toISOString() : undefined, by: cfg.me ? String(cfg.me) : '' });
+  savePending(); doSync();
+}
+function syncStatus() {
+  if (!sync.key) return '<span class="slow">未連線（只存在這支手機）</span>';
+  const p = pending.length ? ` · ${pending.length} 筆待送` : '';
+  if (sync.ok) return `<span class="fast">已連線</span> · ${fmtT(sync.last)} 更新${p}`;
+  return `<span class="slow">${esc(sync.err || '連線中…')}</span>${p}`;
+}
+
+// ---------- GPS（OwnTracks 回報；person＝號碼，車上手機用 car1／car2） ----------
+const GPS_FRESH = 5 * 60e3;                // 超過 5 分鐘沒回報就改回推估
+function addLoc(r) {
+  const a = (sync.loc[r.person] ||= []);
+  a.push({ t: Date.parse(r.recorded_at), lat: r.lat, lon: r.lon, batt: r.batt });
+  a.sort((x, y) => x.t - y.t);
+  const cut = Date.now() - 40 * 60e3;
+  while (a.length > 1 && a[0].t < cut) a.shift();
+}
+// 把 GPS 點投影到路線（k0–k1 公里範圍內的線段），回傳公里數與離路線的距離（公尺）
+function snapKm(lat, lon, k0, k1) {
+  const cx = 111320 * Math.cos(lat * Math.PI / 180), cy = 110540;
+  let best = null;
+  for (let i = 1; i < T.length; i++) {
+    const a = T[i - 1], b = T[i];
+    if (b[2] < k0 || a[2] > k1) continue;
+    const ax = (a[1] - lon) * cx, ay = (a[0] - lat) * cy, bx = (b[1] - lon) * cx, by = (b[0] - lat) * cy;
+    const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+    const f = L2 ? Math.min(1, Math.max(0, -(ax * dx + ay * dy) / L2)) : 0;
+    const d = Math.hypot(ax + f * dx, ay + f * dy);
+    if (!best || d < best.off) best = { off: d, km: a[2] + f * (b[2] - a[2]) };
+  }
+  return best;
+}
+// 跑步中那棒的 GPS：位置、本棒進度、目前配速（近 5 分鐘）、本棒平均配速；沒有新鮮資料回傳 null
+function gpsOf(s, now) {
+  if (cfg.demo || !sync.key) return null;
+  const a = sync.loc[String(s.runner)];
+  const last = a && a[a.length - 1];
+  if (!last || now - last.t > GPS_FRESH || last.t < s.start) return null;
+  const k0 = s.L.startKm - 0.5, k1 = s.L.endKm + 0.5;
+  const sn = snapKm(last.lat, last.lon, k0, k1);
+  const g = { pos: [last.lat, last.lon], t: last.t, batt: last.batt, off: !sn || sn.off > 300 };
+  if (g.off) return g;
+  g.km = Math.min(s.L.endKm, Math.max(s.L.startKm, sn.km));
+  g.frac = (g.km - s.L.startKm) / s.L.km;
+  const okPace = p => p > 150 && p < 1200 ? p : null;      // 2:30～20:00/km 以外當成雜訊
+  const first = a.find(p => p.t >= last.t - 5 * 60e3 && p.t >= s.start);
+  if (first && first !== last) {
+    const f = snapKm(first.lat, first.lon, k0, k1);
+    if (f && f.off < 300 && g.km - f.km > 0.15) g.pace = okPace((last.t - first.t) / 1000 / (g.km - f.km));
+  }
+  const done = g.km - s.L.startKm;
+  if (done > 0.3) g.avg = okPace((last.t - s.start) / 1000 / done);
+  return g;
+}
+const agoText = t => { const m = Math.round((nowMs() - t) / 60000); return m < 1 ? '剛剛' : `${m} 分鐘前`; };
+
 // ---------- 格式 ----------
 const fmtT = ms => new Intl.DateTimeFormat('zh-TW', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(ms);
 function fmtDT(ms) {
@@ -58,7 +194,7 @@ function fmtLong(sec) {
   const d = Math.floor(sec / 86400), h = Math.floor(sec % 86400 / 3600), m = Math.floor(sec % 3600 / 60);
   return d ? `${d} 天 ${h} 小時` : h ? `${h} 小時 ${m} 分` : `${m} 分`;
 }
-const fmtPace = s => `${Math.floor(s / 60)}'${String(Math.round(s % 60)).padStart(2, '0')}"`;
+const fmtPace = s => { s = Math.round(s); return `${Math.floor(s / 60)}'${String(s % 60).padStart(2, '0')}"`; };
 function parsePace(str) {
   const m = String(str).trim().match(/^(\d{1,2})[:'’](\d{1,2})"?$/);
   return m ? (+m[1]) * 60 + (+m[2]) : null;
@@ -126,7 +262,13 @@ function schedule(now, st) {
     const start = prevEnd;
     let end, status;
     if (prevDone && st.finishes[n] != null) { end = st.finishes[n]; status = 'done'; }
-    else if (prevDone) { end = Math.max(start + dur, now + 60e3); status = 'run'; prevDone = false; }
+    else if (prevDone) {
+      status = 'run'; prevDone = false;
+      const g = gpsOf({ runner: runnerOf(n), start, L }, now);
+      const pace = g && !g.off && (g.avg || g.pace);
+      end = pace ? Math.max(now + 60e3, g.t + ((L.endKm - g.km) * pace + OVERHEAD_SEC) * 1000)
+                 : Math.max(start + dur, now + 60e3);
+    }
     else { end = start + dur; status = 'todo'; }
     prevEnd = end;
     return { L, n, runner: runnerOf(n), car: carOf(n), dur, planStart, planEnd, start, end, status };
@@ -135,8 +277,10 @@ function schedule(now, st) {
 
 // 進行中那棒：推估完成比例與所在公里數（之後有 GPS 就改用實際位置）
 function progressOf(s, now) {
+  const g = gpsOf(s, now);
+  if (g && !g.off) return { frac: Math.min(0.99, g.frac), km: g.km, g };
   const frac = Math.min(0.99, Math.max(0, (now - s.start) / s.dur));
-  return { frac, km: s.L.startKm + frac * s.L.km };
+  return { frac, km: s.L.startKm + frac * s.L.km, g };
 }
 function posAtKm(km) {
   let lo = 0, hi = T.length - 1;
@@ -187,7 +331,7 @@ function assignLeg(n, v, sub) {
   }
   setAssign(n, v);
   if (sub) cfg.sub[n] = true; else delete cfg.sub[n];
-  saveCfg();
+  sharedChanged();
 }
 
 // ---------- 共用元件 ----------
@@ -215,8 +359,8 @@ function elevSvg(a, b) {
   return `<svg class="elev" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
     <polygon points="${x(pts[0][2]).toFixed(1)},${H} ${line} ${x(pts[pts.length - 1][2]).toFixed(1)},${H}" fill="#3b82f6" opacity=".3"/>${steep}
     <polyline points="${line}" fill="none" stroke="#93c5fd" stroke-width="2" vector-effect="non-scaling-stroke"/>
-    <text x="4" y="14" fill="#8b909a" font-size="13">${Math.round(hi - 10)} m</text>
-    <text x="4" y="${H - 8}" fill="#8b909a" font-size="13">${Math.round(lo + 10)} m</text></svg>
+    <text x="4" y="14" fill="#a8adb7" font-size="13">${Math.round(hi - 10)} m</text>
+    <text x="4" y="${H - 8}" fill="#a8adb7" font-size="13">${Math.round(lo + 10)} m</text></svg>
     <div class="muted" style="font-size:12px;margin-top:4px"><b style="color:#ef4444">紅色</b>＝陡上坡（坡度超過 5%）</div>`;
 }
 // 夜間棒提醒（大會規定，違規整隊取消資格）
@@ -376,8 +520,9 @@ function renderLegs(now, sch, st) {
       <div class="row" style="margin-top:8px"><span><span style="font-size:12px;opacity:.85">本棒進度</span><br><span class="big num" style="font-size:38px">${(p.frac * 100).toFixed(0)}%</span></span>
         <span style="text-align:right">預計交棒<br><b class="num" style="font-size:28px">${fmtT(run.end)}</b></span></div>
       <div class="bar"><i style="width:${(p.frac * 100).toFixed(0)}%"></i></div>
-      <div class="row" style="font-size:13px"><span>已跑 <span class="num" data-elapsed="${run.start}">${fmtDur((now - run.start) / 1000)}</span>（推估位置）</span>
+      <div class="row" style="font-size:13px"><span>已跑 <span class="num" data-elapsed="${run.start}">${fmtDur((now - run.start) / 1000)}</span>（${p.g && !p.g.off ? 'GPS' : '推估'}）</span>
         <span>${nx ? `下一棒 ${runnerName(nx.runner)} · Car${nx.car}` : '最後一棒'}</span></div>
+      ${p.g ? `<div style="font-size:13px;margin-top:4px">${p.g.off ? '⚠ 偏離路線 · ' : ''}${p.g.pace ? `目前配速 <b class="num">${fmtPace(p.g.pace)}</b> · ` : ''}${p.g.avg ? `本棒平均 <b class="num">${fmtPace(p.g.avg)}</b> · ` : ''}GPS ${agoText(p.g.t)}</div>` : ''}
       ${cfg.demo ? '' : `<button class="btn" data-act="finish" data-n="${run.n}">第 ${run.n} 棒完成交棒</button>`}</div>`;
   } else if (!st.raceStart) {
     hero = `<div class="hero idle"><div class="label">尚未開跑 · 預計出發 ${fmtDT(Date.parse(cfg.planStart))}</div>
@@ -467,9 +612,24 @@ function updatePins() {
   el.classList.toggle('pins-md', z >= 12 && z < 14);
   el.classList.toggle('pins-lg', z >= 14);
 }
+// 車子：車上指定一支手機用 OwnTracks 回報（u=car1／car2），30 分鐘內有回報才顯示
+const carMarkers = {};
+function updateCars(now) {
+  for (const c of [1, 2]) {
+    const a = !cfg.demo && sync.loc['car' + c], last = a && a[a.length - 1];
+    if (!last || now - last.t > 30 * 60e3) { if (carMarkers[c]) carMarkers[c].remove(); continue; }
+    const html = ICONS['car' + c]
+      ? `<div class="car-pin img" style="border-color:${CAR_COLOR[c]}"><img src="${ICONS['car' + c]}" alt=""></div>`
+      : `<div class="car-pin" style="background:${CAR_COLOR[c]}">🚐<b>${c}</b></div>`;
+    (carMarkers[c] ||= L.marker([0, 0], { zIndexOffset: 900 }))
+      .setIcon(L.divIcon({ className: 'pin-wrap', iconSize: [0, 0], html }))
+      .bindTooltip(`Car${c} · ${agoText(last.t)}`).setLatLng([last.lat, last.lon]).addTo(map);
+  }
+}
 function renderMap(now, sch) {
   document.getElementById('map-demo').innerHTML = demoBar();
   if (!map) return;
+  updateCars(now);
   const run = sch.find(s => s.status === 'run');
   // 已完成淡化、未開始半透明，進行中最亮
   sch.forEach((s, i) => legLines[i].setStyle({ opacity: s.status === 'done' ? 0.25 : s.status === 'run' ? 1 : 0.6,
@@ -487,10 +647,10 @@ function renderMap(now, sch) {
       : '<b>完賽 🎉</b>';
     return;
   }
-  const p = progressOf(run, now), pos = posAtKm(p.km);
+  const p = progressOf(run, now), pos = p.g ? p.g.pos : posAtKm(p.km);
   runnerMarker.setIcon(ICONS.runner
-    ? L.divIcon({ className: '', iconSize: [36, 36],
-        html: `<div class="runner-pin img" style="border-color:${CAR_COLOR[run.car]}"><img src="${ICONS.runner}" alt=""></div>` })
+    ? L.divIcon({ className: '', iconSize: [44, 44],
+        html: `<div class="runner-pin img" style="border-color:${CAR_COLOR[run.car]}"><img src="${ICONS.runner(run.runner)}" alt=""></div>` })
     : L.divIcon({ className: '', iconSize: [20, 20],
         html: `<div class="runner-pin" style="width:20px;height:20px;background:${CAR_COLOR[run.car]}"></div>` }));
   runnerMarker.setLatLng(pos).addTo(map);
@@ -500,7 +660,9 @@ function renderMap(now, sch) {
   card.innerHTML = `<div class="row"><span><span class="badge car${run.car}" style="display:inline-flex;width:28px;height:28px;font-size:13px;vertical-align:middle">${run.n}</span>
       <b style="margin-left:6px">${runnerName(run.runner)}</b> <span class="muted">Car${run.car}</span></span>
       <span class="num"><b>${(p.frac * 100).toFixed(0)}%</b> <span class="muted">· ${fmtT(run.end)} 預計抵達</span></span></div>
-    <div class="muted" style="font-size:12px;margin-top:4px">位置是用配速推估的（尚未接 GPS）${nx ? ` · 下一棒 ${runnerName(nx.runner)}` : ''}</div>`;
+    <div class="muted" style="font-size:12px;margin-top:4px">${p.g
+      ? `GPS ${agoText(p.g.t)}${p.g.off ? ' · ⚠ 偏離路線' : ''}${p.g.pace ? ` · 目前 ${fmtPace(p.g.pace)}` : ''}${p.g.avg ? ` · 平均 ${fmtPace(p.g.avg)}` : ''}${p.g.batt != null ? ` · 電量 ${p.g.batt}%` : ''}`
+      : `位置用配速推估（${cfg.demo ? '示範模式' : !sync.key ? '未連線' : '沒有收到這位跑者的 GPS'}）`}${nx ? ` · 下一棒 ${runnerName(nx.runner)}` : ''}</div>`;
 }
 
 // ---------- 彈出視窗：單棒詳情 ----------
@@ -578,6 +740,8 @@ function runnerPicker(s, sch) {
     const off = !sub && ranThisRound.has(r) && r !== s.runner;
     return `<option value="${r}" ${r === s.runner ? 'selected' : ''} ${off ? 'disabled' : ''}>${runnerName(r)}${off ? '（本輪已跑）' : ''}</option>`;
   }).join('');
+  if (!canEdit()) return `<div class="kv"><span>跑者${tags}</span><span>${runnerName(s.runner)} · Car${s.car}</span></div>
+    <div class="muted" style="font-size:12px;padding-top:6px">換人要由管理員在這裡改。<button class="chip plain" data-act="rules" style="margin-left:4px">📘 換棒規則</button></div>`;
   return `<div class="kv"><span>跑者${tags}</span><span><select data-act="assign" data-n="${s.n}">${opts}</select> · Car${s.car}</span></div>
     <div class="kv"><span style="font-size:13px">受傷代跑<br><span class="muted">允許本輪已跑過的人再跑這棒</span></span>
       <input type="checkbox" data-act="set-sub" ${sub ? 'checked' : ''} style="width:22px;height:22px"></div>
@@ -596,6 +760,16 @@ function openSettings() {
   sheetLeg = null;
   const ps = Date.parse(cfg.planStart);
   openSheet(`<div class="sheet-head"><h3>設定</h3><button data-act="close">完成</button></div>
+    <h2 style="margin-top:0">隊伍連線</h2>
+    <div class="card">
+      <div class="kv"><span>狀態</span><span style="font-size:13px;text-align:right">${syncStatus()}</span></div>
+      ${!sync.key ? `<div class="kv"><span>隊伍密碼</span><span><input id="key-in" style="width:120px" autocomplete="off"> <button class="chip plain" data-act="set-key">連線</button></span></div>
+        <div class="muted" style="font-size:12px;padding-top:6px">用隊長傳的連結打開就會自動連線，不用手動輸入。</div>`
+      : sync.admin ? `<div class="kv"><span>管理員</span><span>已解鎖 <button class="chip plain" data-act="lock">登出</button></span></div>
+        <button class="btn ghost" data-act="copy-link" style="margin-top:10px">複製隊友連結（含隊伍密碼）</button>`
+      : `<div class="kv"><span>管理員密碼</span><span><input id="pin-in" type="password" style="width:100px" autocomplete="off"> <button class="chip plain" data-act="unlock">解鎖</button></span></div>
+        <div class="muted" style="font-size:12px;padding-top:6px">名字、棒次順序、配速、出發時間由管理員設定，全隊同步；交棒誰都可以按。</div>`}
+    </div>
     <div class="card">
       <div class="kv"><span>我是</span><select data-act="set-me">${RUNNERS.map(r => `<option value="${r}" ${r === cfg.me ? 'selected' : ''}>${runnerName(r)}</option>`).join('')}</select></div>
       <div class="kv"><span>預計出發時間</span><input type="datetime-local" data-act="set-start" value="${toLocalInput(ps)}"></div>
@@ -617,8 +791,12 @@ function openSettings() {
         <input type="range" min="-1" max="30" step="0.25" value="${cfg.demoHours}" data-act="set-demo-h" style="width:100%;margin-top:8px;padding:0"></div>` : ''}
     </div>
     <h2>比賽紀錄</h2>
-    <p class="muted" style="font-size:13px">目前紀錄只存在這支手機。之後接上後端，全隊的交棒紀錄才會同步。</p>
-    <button class="btn warn" data-act="reset">清除這支手機的比賽紀錄</button>`);
+    <p class="muted" style="font-size:13px">${sync.key ? '交棒紀錄全隊同步。清除會清掉全隊的紀錄，只有管理員能做。' : '目前紀錄只存在這支手機。'}</p>
+    ${!sync.key || sync.admin ? `<button class="btn warn" data-act="reset">${sync.key ? '清除全隊的比賽紀錄' : '清除這支手機的比賽紀錄'}</button>` : ''}`);
+  // 不是管理員：共用設定一律唯讀（「我是」和示範模式除外）
+  if (!canEdit()) document.querySelectorAll('#sheet [data-act^="set-"], #sheet [data-act="clear-assign"]').forEach(e => {
+    if (!['set-me', 'set-demo', 'set-demo-h'].includes(e.dataset.act)) e.disabled = true;
+  });
 }
 
 // ---------- 主畫面更新 ----------
@@ -671,29 +849,62 @@ document.addEventListener('click', e => {
       const sch = schedule(nowMs(), raceState(nowMs()));
       for (const k of new Set([...Object.keys(cfg.assign), ...Object.keys(cfg.sub)]))
         if (cfg.demo || sch[k - 1].status === 'todo') { delete cfg.assign[k]; delete cfg.sub[k]; }
-      saveCfg(); toast('已清除還沒跑的個別調整'); openSettings(); render(); break;
+      sharedChanged(); toast('已清除還沒跑的個別調整'); openSettings(); render(); break;
     }
     case 'start':
-      state = { raceStart: Date.now(), finishes: {} }; saveState(); toast('開跑！第 1 棒出發'); render(); break;
+      record('finish', 0, Date.now()); toast('開跑！第 1 棒出發'); render(); break;
     case 'finish':
-      state.finishes[n] = Date.now(); saveState(); toast(`第 ${n} 棒完成，交棒給第 ${n + 1} 棒`);
+      record('finish', n, Date.now()); toast(n < 30 ? `第 ${n} 棒完成，交棒給第 ${n + 1} 棒` : '完賽！🎉');
       if (sheetLeg) renderLegSheet(); render(); break;
     case 'undo':
-      delete state.finishes[n]; saveState(); toast(`已取消第 ${n} 棒的完成紀錄`); renderLegSheet(); render(); break;
+      record('unfinish', n); toast(`已取消第 ${n} 棒的完成紀錄`); renderLegSheet(); render(); break;
     case 'reset':
       if (!resetArmed) { resetArmed = true; a.textContent = '再按一次確認清除'; setTimeout(() => { resetArmed = false; }, 4000); break; }
-      state = { raceStart: null, finishes: {} }; saveState(); resetArmed = false; toast('已清除比賽紀錄'); closeSheet(); render(); break;
+      resetArmed = false;
+      if (sync.key) {
+        api('reset').then(() => { pending = []; savePending(); state = { raceStart: null, finishes: {} }; saveState();
+          toast('已清除全隊比賽紀錄'); closeSheet(); render(); }).catch(err => toast(err.message));
+        break;
+      }
+      state = { raceStart: null, finishes: {} }; saveState(); toast('已清除比賽紀錄'); closeSheet(); render(); break;
+    case 'set-key': {
+      const v = document.getElementById('key-in').value.trim();
+      if (!v) break;
+      sync.key = v;
+      api('check').then(() => { lsSet(LS_KEY, v); toast('已連線'); doSync().then(openSettings); })
+        .catch(err => { sync.key = ''; toast(err.message); });
+      break;
+    }
+    case 'unlock': {
+      sync.pin = document.getElementById('pin-in').value.trim();
+      api('check').then(j => {
+        if (!j.admin) { sync.pin = ''; return toast('管理員密碼不對'); }
+        sync.admin = true; lsSet(LS_PIN, sync.pin); toast('管理員已解鎖'); openSettings();
+      }).catch(err => { sync.pin = ''; toast(err.message); });
+      break;
+    }
+    case 'lock': sync.pin = ''; sync.admin = false; lsSet(LS_PIN, ''); toast('已登出管理員'); openSettings(); break;
+    case 'copy-link': {
+      const url = `${location.origin}${location.pathname}#k=${encodeURIComponent(sync.key)}`;
+      (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject())
+        .then(() => toast('已複製，貼到 LINE 群組給隊友'))
+        .catch(() => { a.outerHTML = `<div class="card" style="font-size:12px;word-break:break-all;user-select:all">${esc(url)}</div>`; });
+      break;
+    }
   }
 });
 document.addEventListener('change', e => {
   const a = e.target.dataset.act;
+  if (!canEdit() && ['assign', 'set-sub', 'set-order', 'set-name', 'set-start', 'set-pace'].includes(a)) {
+    toast('只有管理員能改'); return openSettings();
+  }
   if (a === 'assign') {
     const n = +e.target.dataset.n;
     assignLeg(n, +e.target.value, subMode || !!cfg.sub[n]); renderLegSheet(); render();
   }
   if (a === 'set-sub') {
     subMode = e.target.checked;
-    if (!subMode && sheetLeg) { delete cfg.sub[sheetLeg]; saveCfg(); }
+    if (!subMode && sheetLeg && cfg.sub[sheetLeg]) { delete cfg.sub[sheetLeg]; sharedChanged(); }
     renderLegSheet(); render();
   }
   if (a === 'set-order') {
@@ -703,20 +914,20 @@ document.addEventListener('change', e => {
     if (j >= 0 && j !== i) cfg.order[j] = cfg.order[i];   // 對調，保持每人剛好一個位置
     cfg.order[i] = v;
     Object.keys(cfg.assign).forEach(n => { if (cfg.assign[n] === cfg.order[(n - 1) % 10]) delete cfg.assign[n]; });
-    saveCfg(); openSettings(); render();
+    sharedChanged(); openSettings(); render();
   }
   if (a === 'set-name') {
     const v = e.target.value.trim().slice(0, 8);
     if (v) cfg.names[+e.target.dataset.r] = v; else delete cfg.names[+e.target.dataset.r];
-    saveCfg(); openSettings(); render();
+    sharedChanged(); openSettings(); render();
   }
   if (a === 'set-me') { cfg.me = +e.target.value; saveCfg(); render(); }
   if (a === 'set-start' && e.target.value) {
-    cfg.planStart = new Date(e.target.value + ':00+08:00').toISOString(); saveCfg(); openSettings(); render();
+    cfg.planStart = new Date(e.target.value + ':00+08:00').toISOString(); sharedChanged(); openSettings(); render();
   }
   if (a === 'set-pace') {
     const v = parsePace(e.target.value);
-    if (v && v >= 180 && v <= 900) { cfg.paces[+e.target.dataset.r] = v; saveCfg(); render(); }
+    if (v && v >= 180 && v <= 900) { cfg.paces[+e.target.dataset.r] = v; sharedChanged(); render(); }
     else { toast('配速格式像 7:00，範圍 3:00～15:00'); e.target.value = fmtPace(cfg.paces[+e.target.dataset.r]).replace("'", ':').replace('"', ''); }
   }
   if (a === 'set-demo') { cfg.demo = e.target.checked; saveCfg(); openSettings(); render(); }
@@ -731,3 +942,7 @@ document.addEventListener('input', e => {
 });
 
 showTab('me');
+// 每 15 秒同步一次；切回 app 時馬上同步
+doSync();
+setInterval(() => { if (!document.hidden) doSync(); }, 15000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) doSync(); });

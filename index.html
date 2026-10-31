@@ -11,7 +11,8 @@
 <style>
 :root {
   --bg: #0e0f12; --card: #1a1c21; --card2: #23262d; --line: #2c2f37;
-  --text: #f2f3f5; --muted: #8b909a;
+  --text: #f2f3f5; --muted: #a8adb7;
+  --accent: #fbbf24; --accent-ink: #111; --accent-bg: #3b2a0a;
   --car1: #e5484d; --car2: #3b82f6;
   --low: #22c55e; --mid: #f59e0b; --hard: #ef4444;
   --fast: #22c55e; --slow: #f97316;
@@ -35,16 +36,17 @@ nav { position: fixed; left: 0; right: 0; bottom: 0; height: calc(var(--nav-h) +
 nav button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   font-size: 12px; color: var(--muted); }
 nav button svg { width: 24px; height: 24px; }
-nav button.active { color: var(--text); }
+nav button.active { color: var(--accent); }
 
 /* 示範模式橫幅 */
-.demo-bar { background: #3b2a0a; color: #fbbf24; font-size: 13px; padding: 8px 12px; border-radius: 10px;
+.demo-bar { background: var(--accent-bg); color: var(--accent); font-size: 13px; padding: 8px 12px; border-radius: 10px;
   margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.demo-bar button { color: #fbbf24; text-decoration: underline; font-size: 13px; white-space: nowrap; }
+.demo-bar button { color: var(--accent); text-decoration: underline; font-size: 13px; white-space: nowrap; }
 #tab-map .demo-bar { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 500; margin: 0; }
 
 /* 卡片 */
 h1 { font-size: 26px; margin: 4px 0 12px; }
+h1::before { content: ""; display: block; width: 28px; height: 4px; border-radius: 2px; background: var(--accent); margin-bottom: 8px; }
 h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin: 20px 0 8px; }
 .card { background: var(--card); border-radius: 16px; padding: 16px; margin-bottom: 12px; }
 .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
@@ -52,7 +54,7 @@ h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin: 20px 0 8px;
   border: 1px solid currentColor; white-space: nowrap; }
 .chip.低 { color: var(--low); } .chip.中 { color: var(--mid); } .chip.難 { color: var(--hard); }
 .chip.plain { color: var(--muted); }
-.btn { display: block; width: 100%; padding: 14px; border-radius: 12px; background: var(--text); color: #111;
+.btn { display: block; width: 100%; padding: 14px; border-radius: 12px; background: var(--accent); color: var(--accent-ink);
   font-weight: 700; font-size: 16px; text-align: center; }
 .btn.ghost { background: var(--card2); color: var(--text); }
 .btn.warn { background: transparent; color: var(--slow); border: 1px solid var(--slow); }
@@ -74,13 +76,14 @@ h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin: 20px 0 8px;
 .bar { height: 6px; background: rgba(255,255,255,.3); border-radius: 3px; margin: 12px 0 6px; overflow: hidden; }
 .bar > i { display: block; height: 100%; background: #fff; border-radius: 3px; }
 .hero .btn { margin-top: 14px; }
+.hero .btn:not(.ghost):not(.warn) { background: #fff; color: #111; }
 
 /* 棒次列表 */
 .leg { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--card); border-radius: 14px;
   margin-bottom: 8px; width: 100%; text-align: left; }
 .leg.done { opacity: .55; }
 .leg.run { outline: 2px solid var(--text); }
-.leg.mine { box-shadow: inset 4px 0 0 #fbbf24; }
+.leg.mine { box-shadow: inset 4px 0 0 var(--accent); }
 .badge { flex: none; width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
   font-weight: 800; font-size: 16px; color: #fff; }
 .badge.car1 { background: var(--car1); } .badge.car2 { background: var(--car2); }
@@ -102,7 +105,7 @@ h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin: 20px 0 8px;
 .pin-wrap { overflow: visible; }
 .pin { position: absolute; transform: translate(-50%, -50%); background: #111; color: #ddd; border: 1px solid #666;
   border-radius: 7px; font: 700 13px/1 sans-serif; padding: 4px 6px; white-space: nowrap; }
-.pin.major { background: #fbbf24; color: #111; border-color: #fbbf24; font-size: 14px; }
+.pin.major { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-size: 14px; }
 .pins-md .pin { font-size: 17px; padding: 5px 8px; }
 .pins-lg .pin { font-size: 22px; padding: 6px 11px; border-radius: 9px; }
 /* 進行中的棒次：虛線往前流動＋光暈呼吸 */
@@ -113,8 +116,8 @@ h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin: 20px 0 8px;
 .runner-pin { animation: runner-pulse 1.6s ease-out infinite; }
 @keyframes runner-pulse { 0% { box-shadow: 0 0 0 0 rgba(255,255,255,.6); } 100% { box-shadow: 0 0 0 16px rgba(255,255,255,0); } }
 .runner-pin { border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(255,255,255,.25); }
-.runner-pin.img { width: 36px; height: 36px; background: #fff; border-width: 3px; overflow: hidden; }
-.runner-pin.img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.runner-pin.img { width: 44px; height: 44px; background: #282b32; border-width: 3px; overflow: hidden; }
+.runner-pin.img img { width: 100%; height: 100%; object-fit: cover; display: block; image-rendering: pixelated; }
 .rules .kv { align-items: flex-start; gap: 12px; }
 .rules .kv b { white-space: nowrap; }
 .rules .kv span { font-size: 13px; text-align: right; }
@@ -139,6 +142,12 @@ h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin: 20px 0 8px;
 .handoff-time b { font-size: 18px; }
 .handoff-sub { text-align: center; font-size: 12px; margin-top: 4px; color: rgba(255,255,255,.85); }
 .handoff-sub span { color: #fff; font-weight: 800; }
+.car-pin { position: absolute; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 2px; padding: 3px 7px;
+  border-radius: 9px; border: 2px solid #fff; color: #fff; font-size: 15px; box-shadow: 0 1px 6px rgba(0,0,0,.5); white-space: nowrap; }
+.car-pin b { font-size: 13px; }
+.car-pin.img { width: 42px; height: 42px; padding: 0; background: #282b32; overflow: hidden; border-width: 3px; }
+.car-pin.img img { width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; }
+#sheet select:disabled, #sheet input:disabled, #sheet button:disabled { opacity: .55; }
 .dark-tiles { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); }
 
 /* 底部彈出視窗 */
@@ -152,7 +161,7 @@ h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin: 20px 0 8px;
   padding: 16px 16px 10px; position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
 .sheet-head button { font-weight: 700; }
 .sheet-head h3 { margin: 0; font-size: 18px; }
-.sheet-head button { background: var(--card2); border-radius: 999px; padding: 6px 14px; }
+.sheet-head button { background: var(--card2); color: var(--accent); border-radius: 999px; padding: 6px 14px; }
 select, input { font: inherit; color: var(--text); background: var(--card2); border: 1px solid var(--line);
   border-radius: 10px; padding: 8px 10px; }
 .pace-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
@@ -186,7 +195,7 @@ a.btn { text-decoration: none; }
 .member-list label > span { width: 20px; text-align: center; }
 .member-list input { flex: 1; min-width: 0; }
 .member-list input.pace { flex: none; width: 76px; text-align: center; }
-.issues.warn { background: #3b2a0a; color: #fcd34d; }
+.issues.warn { background: var(--accent-bg); color: #fcd34d; }
 .leg { cursor: pointer; }
 .nav-mini { flex: none; width: 36px; height: 36px; border-radius: 10px; background: var(--card2); display: flex;
   align-items: center; justify-content: center; text-decoration: none; font-size: 17px; }
@@ -220,7 +229,7 @@ select option:disabled { color: #666; }
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <!-- ?v= 改版時加一，避免手機讀到舊的快取 -->
-<script src="data.js?v=7"></script>
-<script src="app.js?v=7"></script>
+<script src="data.js?v=8"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>
