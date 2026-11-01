@@ -997,7 +997,9 @@ function openSettings() {
         <button class="btn warn" data-act="purge" style="margin-top:8px">清除所有測試資料</button>
         <div class="muted" style="font-size:12px;padding-top:12px">測試交接點：把「目前這棒的終點」暫時改成你現在的位置，在家附近走一圈就能測剩 500 m 提醒與自動交棒。</div>
         ${cfg.testPoint ? `<div class="kv"><span>🧪 啟用中（${fmtDT(cfg.testPoint.at)} 設定）</span><button class="chip plain" data-act="tp-clear">取消</button></div>`
-          : `<button class="btn ghost" data-act="tp-set" style="margin-top:8px">把測試交接點設在我現在的位置</button>`}`
+          : `<button class="btn ghost" data-act="tp-set" style="margin-top:8px">把測試交接點設在我現在的位置</button>`}
+        <div class="muted" style="font-size:12px;padding-top:12px">模擬隊友第一次使用：清掉這支手機記住的隊伍密碼、管理員、我是誰、通知訂閱，變回剛拿到連結的樣子（雲端資料不受影響）。</div>
+        <button class="btn ghost" data-act="reset-phone" style="margin-top:8px">把這支手機重設成新手（測試用）</button>`
       : `<div class="kv"><span>管理員密碼</span><span><input id="pin-in" type="password" style="width:100px" autocomplete="off"> <button class="chip plain" data-act="unlock">解鎖</button></span></div>
         <div class="muted" style="font-size:12px;padding-top:6px">名字、棒次順序、配速、出發時間由管理員設定，全隊同步；交棒誰都可以按。</div>`}
     </div>
@@ -1033,7 +1035,7 @@ function openSettings() {
 }
 
 // ---------- 主畫面更新 ----------
-let tab = 'me', purgeArmed = false;
+let tab = 'me', purgeArmed = false, phoneArmed = false;
 function render() {
   const now = nowMs(), st = raceState(now), sch = schedule(now, st);
   if (tab === 'me') renderMe(now, sch);
@@ -1153,6 +1155,14 @@ document.addEventListener('click', e => {
           <div style="word-break:break-all;user-select:all;background:var(--card2);padding:6px;border-radius:8px">${esc(c.url)}</div>
           · 裝置 ID（Device ID）：<b>${esc(c.deviceId)}</b>　· 縮寫（Tracker ID）：<b>${esc(c.tid)}</b><br>· 監控模式 Monitoring：<b>Move</b></div>`;
       }).catch(err => toast(err.message));
+      break;
+    case 'reset-phone':
+      if (!phoneArmed) { phoneArmed = true; a.textContent = '再按一次確認重設'; setTimeout(() => { phoneArmed = false; }, 4000); break; }
+      phoneArmed = false; toast('重設中…');
+      disablePush().catch(() => {}).finally(() => {
+        try { Object.keys(localStorage).filter(k => k.startsWith(LS_PRE + 'crufu.')).forEach(k => localStorage.removeItem(k)); } catch (e) { /* 存不了就算了 */ }
+        location.replace(location.pathname);    // 網址上的 #k=…&me=… 也一起拿掉
+      });
       break;
     case 'purge':
       if (!purgeArmed) { purgeArmed = true; a.textContent = '再按一次確認清除（無法復原）'; setTimeout(() => { purgeArmed = false; }, 4000); break; }
