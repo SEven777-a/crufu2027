@@ -244,16 +244,18 @@ function openSetup() {
     <div style="margin-top:12px"><b>1. 安裝 OwnTracks</b>（裝過的跳過）</div>
     <a class="btn ghost" href="${OT_STORE[os]}" target="_blank" rel="noopener">${ios ? 'App Store' : 'Play 商店'} 安裝 OwnTracks</a>
     <div style="margin-top:12px"><b>2. 先打開 OwnTracks 一次</b>，它會要權限：</div>
-    <div>· 位置：選${ios ? '<b>「使用 App 時允許」</b>，之後再跳出來時選<b>「改為永遠允許」</b>' : '<b>「使用應用程式時允許」</b>，再到下一步改成<b>「一律允許」</b>'}</div>
+    <div>· 位置：選${ios ? '<b>「使用 App 期間」</b>' : '<b>「僅在使用該應用程式時允許」</b>'}，「精確位置」要打開</div>
     <div>· 通知：允許（OwnTracks 自己的，不影響我們的提醒）</div>
     <div>· 出現說明頁按「下一步／Next」到底就好，<b>裡面的設定都不用填</b></div>
     <div style="margin-top:12px"><b>3. 回到這個畫面</b>，按這顆（會自動跳到 OwnTracks 並帶入設定）：</div>
     <button class="btn" data-act="ot-setup">一鍵設定 OwnTracks</button>
     <div style="margin-top:6px">${ios ? '跳出「匯入設定？」之類的視窗按<b>「OK／匯入」</b>；沒跳視窗也沒關係，代表已直接套用'
       : '會看到一頁設定內容，按右上角的<b>「匯入／Import」</b>（打勾或下載圖示，或在 ⋮ 選單裡）'}</div>
-    <div style="margin-top:12px"><b>4. 讓它在背景一直回報</b></div>
-    <div>${ios ? '手機的<b>設定 → OwnTracks → 位置</b> → 選<b>「永遠」</b>，「精確位置」打開'
-      : '手機的<b>設定 → 應用程式 → OwnTracks</b>：<br>· 權限 → 位置 → <b>「一律允許」</b><br>· 電池 → <b>「不限制」</b>（有的手機叫「無限制」或「不最佳化」）'}</div>
+    <div style="margin-top:12px"><b>4. 記住用法：打開 OwnTracks＝上線，關掉＝下線</b></div>
+    <div>· 開著時隊友看得到你；<b>縮小、關螢幕都沒關係</b>，一樣會回報</div>
+    <div>· 不想被看到時，從多工畫面把 OwnTracks 滑掉就下線了</div>
+    <div>· <b>比賽當天整場都要開著</b>，跑到一半被關掉，全隊會收到「⚠ 收不到位置」</div>
+    ${ios ? '' : '<div>· Android 建議到 <b>設定 → 應用程式 → OwnTracks → 電池</b> 選「不限制」，免得被省電功能關掉</div>'}
     <div style="margin-top:12px"><b>5. 回到這個畫面，拿著手機走動一下</b>，1～2 分鐘內上面會變成 ✅</div>
     <div class="muted" style="font-size:12px;margin-top:6px">一鍵設定沒反應？<button class="chip plain" data-act="ot-manual">改用手動設定</button></div>
     <div id="ot-manual"></div>`;
