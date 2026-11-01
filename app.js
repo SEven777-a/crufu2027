@@ -3,6 +3,19 @@
 // 本機 localStorage 當快取（沒訊號時照樣能看、能按交棒）
 'use strict';
 
+// 網址帶 reset（例如 …/#k=隊伍密碼&reset）：清掉這支手機記住的一切、取消通知訂閱，再當成第一次打開（測試新手流程用）
+{
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (h.has('reset') && !window.CRUFU_SIM) {
+    try { Object.keys(localStorage).filter(k => k.startsWith('crufu.')).forEach(k => localStorage.removeItem(k)); } catch (e) { /* 存不了就算了 */ }
+    const go = () => location.replace(location.pathname + location.search + (h.get('k') ? '#k=' + encodeURIComponent(h.get('k')) : ''));
+    ('serviceWorker' in navigator ? navigator.serviceWorker.getRegistration() : Promise.resolve(null))
+      .then(r => r && r.pushManager && r.pushManager.getSubscription()).then(sub => sub && sub.unsubscribe())
+      .catch(() => {}).finally(go);
+    throw new Error('reset');                   // 停在這裡，後面的程式不要再把舊資料存回去
+  }
+}
+
 const D = window.CRUFU_DATA;
 const T = D.track;                         // [lat, lon, 累積 km, 高度 m]
 const TZ = 'Asia/Taipei';
