@@ -265,6 +265,9 @@ function openSetup() {
     <div>· 位置：選${ios ? '<b>「使用 App 期間」</b>' : '<b>「僅在使用該應用程式時允許」</b>'}，「精確位置」要打開</div>
     <div>· 通知：允許（OwnTracks 自己的，不影響我們的提醒）</div>
     <div>· 出現說明頁按「下一步／Next」到底就好，<b>裡面的設定都不用填</b></div>
+    <div style="margin-top:6px">· <b>打開「允許外部設定」</b>（不開的話下一步會出現 not allowed）：${ios
+      ? 'OwnTracks 進到 <b>Settings</b> → 滑到最下面 <b>Remote Control</b> → 打開 <b>Allow external configuration</b>'
+      : 'OwnTracks 選單 → <b>Preferences／設定</b> → 找到 <b>Allow external configuration</b>（或含 external configuration 字樣的選項）→ 打開'}</div>
     <div style="margin-top:12px"><b>3. 回到這個畫面</b>，按這顆（會自動跳到 OwnTracks 並帶入設定）：</div>
     <button class="btn" data-act="ot-setup">一鍵設定 OwnTracks</button>
     <div style="margin-top:6px">${ios ? '跳出「匯入設定？」之類的視窗按<b>「OK／匯入」</b>；沒跳視窗也沒關係，代表已直接套用'
