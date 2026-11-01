@@ -1170,7 +1170,7 @@ document.addEventListener('click', e => {
       break;
     case 'tp-clear': cfg.testPoint = null; sharedChanged(); toast('已取消測試交接點'); openSettings(); render(); break;
     case 'copy-link': {
-      const url = `${location.origin}${location.pathname}#k=${encodeURIComponent(sync.key)}`;
+      const url = `${location.origin}${location.pathname}?openExternalBrowser=1#k=${encodeURIComponent(sync.key)}`;
       (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject())
         .then(() => toast('已複製，貼到 LINE 群組給隊友'))
         .catch(() => { a.outerHTML = `<div class="card" style="font-size:12px;word-break:break-all;user-select:all">${esc(url)}</div>`; });
