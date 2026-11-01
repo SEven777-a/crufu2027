@@ -34,6 +34,7 @@ const cfg = load(LS_CFG, {
   demo: true,                               // 示範模式：用模擬時間與模擬交棒紀錄
   demoHours: 7.5,                           // 示範模式的「現在」＝出發後幾小時
   testPoint: null,                          // 測試交接點 {lat, lon}：管理員測試自動交棒用，正式比賽前要取消
+  os: '',                                   // 新手設定選的手機系統 ios／android（空的就自動判斷）
   showCrew: false,                          // 地圖顯示全隊每個人的位置（只存在這支手機）
   mapStyle: 'street',                       // 地圖底圖：street 街道（類似 Google 地圖）／dark 深色／sat 衛星
 });
@@ -212,9 +213,13 @@ async function testPush() {
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j.ok) throw new Error(j.error || `送出失敗（${j.status || r.status}）`);
 }
-function pushCard() {
+function pushCard(setup) {
   const st = push.state;
-  const body = st === 'on' ? `<div class="kv"><span>✅ 已開啟</span><span><button class="chip plain" data-act="push-test">傳測試通知</button> <button class="chip plain" data-act="push-off">關閉</button></span></div>`
+  const body = st === 'on' && setup ? `<div>✅ 通知已開啟</div>
+      <div style="font-size:14px;line-height:1.7;margin-top:6px">最後確認一下收不收得到：按下面這顆，<b>馬上鎖螢幕</b>，幾秒內鎖定畫面會跳出「🔔 測試通知」就代表成功。</div>
+      <button class="btn" data-act="push-test" style="margin-top:10px">傳測試通知給自己</button>
+      <div class="muted" style="font-size:12px;margin-top:6px">沒收到？到手機設定確認這個 app（iPhone 是 CRUFU、Android 是 Chrome）的通知是開的，再試一次。</div>`
+    : st === 'on' ? `<div class="kv"><span>✅ 已開啟</span><span><button class="chip plain" data-act="push-test">傳測試通知</button> <button class="chip plain" data-act="push-off">關閉</button></span></div>`
     : st === 'off' ? `<button class="btn" data-act="push-on">開啟通知</button>`
     : st === 'denied' ? `<div class="muted" style="font-size:13px">通知被封鎖了。到手機的<b>設定 → 通知</b>（Android 是 Chrome 的網站設定）把這個網站改成允許，再回來重新整理。</div>`
     : st === 'need-install' ? `<div style="font-size:13px;line-height:1.7">iPhone 要先把 app 加到主畫面才能收通知：<br>
@@ -232,9 +237,26 @@ function myLoc() { const a = cfg.me && sync.loc[String(cfg.me)]; return a && a[a
 function openSetup() {
   sheetLeg = null;
   const me = cfg.me, loc = myLoc(), locOk = loc && Date.now() - loc.t < 10 * 60e3;
-  const store = isIOS ? `<a class="btn ghost" href="${OT_STORE.ios}" target="_blank" rel="noopener">App Store 安裝 OwnTracks</a>`
-    : /Android/.test(navigator.userAgent) ? `<a class="btn ghost" href="${OT_STORE.android}" target="_blank" rel="noopener">Play 商店安裝 OwnTracks</a>`
-    : `<div class="btn-row"><a class="btn ghost" href="${OT_STORE.ios}" target="_blank" rel="noopener">App Store</a><a class="btn ghost" href="${OT_STORE.android}" target="_blank" rel="noopener">Play 商店</a></div>`;
+  const os = cfg.os || (isIOS ? 'ios' : /Android/.test(navigator.userAgent) ? 'android' : '');
+  const osBtn = (v, t) => `<button class="btn ${os === v ? '' : 'ghost'}" data-act="set-os" data-os="${v}">${t}</button>`;
+  const ios = os === 'ios';
+  const guide = !os ? '<div class="muted" style="margin-top:10px">先選你的手機系統 ↑</div>' : `
+    <div style="margin-top:12px"><b>1. 安裝 OwnTracks</b>（裝過的跳過）</div>
+    <a class="btn ghost" href="${OT_STORE[os]}" target="_blank" rel="noopener">${ios ? 'App Store' : 'Play 商店'} 安裝 OwnTracks</a>
+    <div style="margin-top:12px"><b>2. 先打開 OwnTracks 一次</b>，它會要權限：</div>
+    <div>· 位置：選${ios ? '<b>「使用 App 時允許」</b>，之後再跳出來時選<b>「改為永遠允許」</b>' : '<b>「使用應用程式時允許」</b>，再到下一步改成<b>「一律允許」</b>'}</div>
+    <div>· 通知：允許（OwnTracks 自己的，不影響我們的提醒）</div>
+    <div>· 出現說明頁按「下一步／Next」到底就好，<b>裡面的設定都不用填</b></div>
+    <div style="margin-top:12px"><b>3. 回到這個畫面</b>，按這顆（會自動跳到 OwnTracks 並帶入設定）：</div>
+    <button class="btn" data-act="ot-setup">一鍵設定 OwnTracks</button>
+    <div style="margin-top:6px">${ios ? '跳出「匯入設定？」之類的視窗按<b>「OK／匯入」</b>；沒跳視窗也沒關係，代表已直接套用'
+      : '會看到一頁設定內容，按右上角的<b>「匯入／Import」</b>（打勾或下載圖示，或在 ⋮ 選單裡）'}</div>
+    <div style="margin-top:12px"><b>4. 讓它在背景一直回報</b></div>
+    <div>${ios ? '手機的<b>設定 → OwnTracks → 位置</b> → 選<b>「永遠」</b>，「精確位置」打開'
+      : '手機的<b>設定 → 應用程式 → OwnTracks</b>：<br>· 權限 → 位置 → <b>「一律允許」</b><br>· 電池 → <b>「不限制」</b>（有的手機叫「無限制」或「不最佳化」）'}</div>
+    <div style="margin-top:12px"><b>5. 回到這個畫面，拿著手機走動一下</b>，1～2 分鐘內上面會變成 ✅</div>
+    <div class="muted" style="font-size:12px;margin-top:6px">一鍵設定沒反應？<button class="chip plain" data-act="ot-manual">改用手動設定</button></div>
+    <div id="ot-manual"></div>`;
   const step = (ok, t) => `<h2>${ok ? '✅' : '⬜'} ${t}</h2>`;
   openSheet(`<div class="sheet-head" id="setup-sheet"><h3>新手設定</h3><button data-act="close">稍後</button></div>
     <p class="muted" style="font-size:13px;margin-top:0">三個步驟，做完隊友就看得到你的位置，比賽中的提醒你也收得到。</p>
@@ -243,15 +265,10 @@ function openSetup() {
     ${step(locOk, '② 定位（OwnTracks）')}
     <div class="card" style="font-size:14px;line-height:1.7">
       ${locOk ? `<div>✅ 已收到你的位置（${agoText(loc.t)}）</div>` : `<div class="muted">${me ? '還沒收到你的位置，照下面做：' : '先完成第 ① 步'}</div>`}
-      ${me && !locOk ? `<div>1. 安裝 OwnTracks（裝過的跳過）</div>${store}
-        <div style="margin-top:10px">2. 按這顆，會打開 OwnTracks 並自動填好設定 → 按「匯入／Import」</div>
-        <button class="btn" data-act="ot-setup">一鍵設定 OwnTracks</button>
-        <div style="margin-top:10px">3. OwnTracks 要你給定位權限時，選<b>「永遠允許」</b>；手機的省電設定裡把 OwnTracks 設成<b>「不限制」</b></div>
-        <div class="muted" style="font-size:12px;margin-top:6px">設定好後走動一下，這裡 1～2 分鐘內會變成 ✅。按了沒反應？<button class="chip plain" data-act="ot-manual">改用手動設定</button></div>
-        <div id="ot-manual"></div>` : ''}
+      ${me && !locOk ? `<div style="margin-top:8px">你的手機是：</div><div class="btn-row" style="margin-top:6px">${osBtn('ios', 'iPhone')}${osBtn('android', 'Android')}</div>${guide}` : ''}
     </div>
     ${step(push.state === 'on', '③ 通知')}
-    ${pushCard()}
+    ${pushCard(true)}
     <button class="btn" data-act="setup-done" style="margin-top:14px">完成</button>`);
 }
 function refreshSetup() {
@@ -1122,6 +1139,7 @@ document.addEventListener('click', e => {
         .finally(() => { if (document.getElementById('setup-sheet')) refreshSetup(); else if (document.getElementById('sheet-bg').classList.contains('open')) openSettings(); });
       break;
     }
+    case 'set-os': cfg.os = a.dataset.os; saveCfg(); refreshSetup(); break;
     case 'ot-setup':
       getOtCfg().then(c => { location.href = 'owntracks:///config?inline=' + encodeURIComponent(btoa(JSON.stringify(c))); })
         .catch(err => toast(err.message));
