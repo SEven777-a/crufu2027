@@ -247,8 +247,10 @@ function pushCard(setup) {
     : `<div class="muted" style="font-size:13px">這個瀏覽器不支援通知。Android 請用 <b>Chrome</b> 打開；iPhone 請用 <b>Safari</b> 並更新到 iOS 16.4 以上。</div>`;
   return `<div class="card">${body}<div class="muted" style="font-size:12px;padding-top:8px">跑者剩 500 m、自動交棒、跑者停留 3 分鐘、收不到跑者位置時會通知；手機鎖屏也收得到。
     輪到你跑時，只會收到「剩 500 公尺」和「交棒完成」兩則。</div>
+    <div class="muted" style="font-size:12px;padding-top:6px">⌚ 跑步時用手錶看（實測 Garmin 可以）：Garmin Connect → 你的手錶 → <b>通知與提醒 → 智慧通知</b>，「運動中」打開；
+      手機的 CRUFU 通知要允許顯示在鎖定畫面、預覽選「永遠」。手錶會震動並顯示內容。</div>
     <div class="muted" style="font-size:12px;padding-top:6px">🎧 跑步時想用聽的：戴藍牙耳機，${isIOS
-      ? 'iPhone <b>設定 → 通知 → 朗讀通知</b> 打開，下面清單打開 <b>CRUFU</b>（AirPods／Beats 支援最好）'
+      ? 'iPhone <b>設定 → 通知 → 朗讀通知</b> 打開，下面清單打開 <b>CRUFU</b>（只支援 AirPods 和部分 Beats，其他耳機只會「叮」一聲）'
       : '在 <b>Google 助理設定 → 通知</b> 打開「朗讀通知」（各品牌位置不同）'}。沒戴耳機時不會唸，所以平常不會吵。</div></div>`;
 }
 
