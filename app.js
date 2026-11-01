@@ -62,14 +62,17 @@ function keepHashForIOS() {
     ? `#k=${encodeURIComponent(sync.key)}${cfg.me ? `&me=${cfg.me}` : ''}` : '';
   history.replaceState(null, '', location.pathname + location.search + h);
 }
-{
+function readHash() {
   const h = new URLSearchParams(location.hash.slice(1));
-  if (h.get('k') && !window.CRUFU_SIM) {
+  const got = h.get('k') && !window.CRUFU_SIM;
+  if (got) {
     sync.key = h.get('k'); lsSet(LS_KEY, sync.key);
     if (/^(10|[1-9])$/.test(h.get('me') || '')) { cfg.me = +h.get('me'); saveCfg(); }
   }
   if (location.hash) keepHashForIOS();
+  return got;
 }
+readHash();
 const canEdit = () => !sync.key || sync.admin;
 
 async function api(op, body = {}) {
@@ -1240,8 +1243,13 @@ document.addEventListener('input', e => {
 });
 
 showTab('me');
+function autoSetup() {
+  if (sync.key && !cfg.setupDone && !setupShown && !window.CRUFU_SIM) { setupShown = true; openSetup(); }
+}
+autoSetup();
+window.addEventListener('hashchange', () => { if (readHash()) { autoSetup(); doSync(); } });
 // 每 15 秒同步一次；切回 app 時馬上同步
-pushInit();
+pushInit().then(refreshSetup);
 doSync();
 setInterval(() => { if (!document.hidden) doSync(); }, 15000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) doSync(); });
