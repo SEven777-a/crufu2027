@@ -67,7 +67,9 @@ function readHash() {
   const got = h.get('k') && !window.CRUFU_SIM;
   if (got) {
     sync.key = h.get('k'); lsSet(LS_KEY, sync.key);
-    if (/^(10|[1-9])$/.test(h.get('me') || '')) { cfg.me = +h.get('me'); saveCfg(); }
+    // 網址上的號碼只給 iPhone 主畫面版用（從 Safari 加入主畫面時帶過去）；
+    // 一般瀏覽器不採用，免得有人從網址列複製連結分享，大家都變成同一個人
+    if (isIOS && isStandalone && /^(10|[1-9])$/.test(h.get('me') || '')) { cfg.me = +h.get('me'); saveCfg(); }
   }
   if (location.hash) keepHashForIOS();
   return got;
