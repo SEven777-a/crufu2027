@@ -245,7 +245,11 @@ function pushCard(setup) {
         3. 回到主畫面，點 <b>CRUFU</b> 圖示打開，再到這裡按「開啟通知」<br><span class="muted">需要 iOS 16.4 以上</span></div>`
     : st === 'checking' ? '<div class="muted">檢查中…</div>'
     : `<div class="muted" style="font-size:13px">這個瀏覽器不支援通知。Android 請用 <b>Chrome</b> 打開；iPhone 請用 <b>Safari</b> 並更新到 iOS 16.4 以上。</div>`;
-  return `<div class="card">${body}<div class="muted" style="font-size:12px;padding-top:8px">跑者剩 500 m、自動交棒、跑者停留 3 分鐘、收不到跑者位置時會通知；手機鎖屏也收得到。</div></div>`;
+  return `<div class="card">${body}<div class="muted" style="font-size:12px;padding-top:8px">跑者剩 500 m、自動交棒、跑者停留 3 分鐘、收不到跑者位置時會通知；手機鎖屏也收得到。
+    輪到你跑時，只會收到「剩 500 公尺」和「交棒完成」兩則。</div>
+    <div class="muted" style="font-size:12px;padding-top:6px">🎧 跑步時想用聽的：戴藍牙耳機，${isIOS
+      ? 'iPhone <b>設定 → 通知 → 朗讀通知</b> 打開，下面清單打開 <b>CRUFU</b>（AirPods／Beats 支援最好）'
+      : '在 <b>Google 助理設定 → 通知</b> 打開「朗讀通知」（各品牌位置不同）'}。沒戴耳機時不會唸，所以平常不會吵。</div></div>`;
 }
 
 // ---------- 新手設定：我是誰 → OwnTracks 定位 → 通知 ----------
