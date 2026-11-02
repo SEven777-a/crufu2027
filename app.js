@@ -1239,7 +1239,7 @@ document.addEventListener('change', e => {
     sharedChanged(); openSettings(); render();
   }
   if (a === 'set-name') {
-    const v = e.target.value.trim().slice(0, 8);
+    const v = e.target.value.trim().slice(0, 12);
     if (v) cfg.names[+e.target.dataset.r] = v; else delete cfg.names[+e.target.dataset.r];
     sharedChanged(); openSettings(); render();
   }
