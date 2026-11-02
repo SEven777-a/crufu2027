@@ -83,19 +83,13 @@ h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin: 20px 0 8px;
 .bar { height: 6px; background: rgba(255,255,255,.3); border-radius: 3px; margin: 12px 0 6px; overflow: hidden; }
 .bar > i { display: block; height: 100%; background: #fff; border-radius: 3px; }
 /* 進度條上的跑者頭像 */
-.av-bar { position: relative; margin: 22px 14px 6px; }
+.av-bar { position: relative; margin: 24px 16px 24px; }
 .av-bar .bar { margin: 0; }
 .av-bar img { position: absolute; top: 3px; width: 30px; height: 30px; transform: translate(-50%, -50%); border-radius: 50%;
   border: 2px solid #fff; background: #fff; object-fit: cover; box-shadow: 0 1px 4px rgba(0,0,0,.4); transition: left .8s; }
-/* 全隊人龍：每輪一列 */
-.chain { display: flex; align-items: center; gap: 6px; margin: 10px 0 4px; }
-.chain-n { flex: none; width: 16px; font-size: 11px; opacity: .7; text-align: center; }
-.chain-row { position: relative; flex: 1; height: 30px; margin: 0 14px; }
-.chain-row .bar { position: absolute; left: 0; right: 0; top: 12px; margin: 0; }
-.chain-row img { position: absolute; top: 15px; width: 22px; height: 22px; transform: translate(-50%, -50%); border-radius: 50%;
-  border: 2px solid; background: #fff; object-fit: cover; }
-.chain-row img.todo { opacity: .35; filter: grayscale(1); }
-.chain-row img.run { width: 28px; height: 28px; z-index: 2; box-shadow: 0 0 0 2px #fff, 0 0 8px rgba(255,255,255,.7); }
+/* 全隊總進度：兩台車，跑步中那台放大 */
+.car-bar img { width: 30px; height: 30px; border-width: 3px; opacity: .75; }
+.car-bar img.on { width: 36px; height: 36px; opacity: 1; z-index: 2; }
 .hero .btn { margin-top: 14px; }
 .hero .btn:not(.ghost):not(.warn) { background: #fff; color: #111; }
 
@@ -271,6 +265,6 @@ document.addEventListener('gesturestart', e => { if (!e.target.closest || !e.tar
 <script src="data.js?v=8"></script>
 <!-- 網址加 ?sim 進入模擬模式（假的 10 人比賽，不連真的資料庫） -->
 <script>if (/[?&]sim\b/.test(location.search)) document.write('<script src="sim.js?v=3"><\/script>');</script>
-<script src="app.js?v=35"></script>
+<script src="app.js?v=37"></script>
 </body>
 </html>
