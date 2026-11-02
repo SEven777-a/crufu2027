@@ -234,6 +234,10 @@ async function testPush() {
 // 通知說明：條列，每項 20 字內
 const tips = (title, items) => `<div class="muted" style="font-size:13px;padding-top:8px"><b>${title}</b>
   <ul style="margin:4px 0 0;padding-left:20px;line-height:1.7">${items.map(t => `<li>${t}</li>`).join('')}</ul></div>`;
+// 耳機語音朗讀：手機系統的設定，網頁沒辦法代開，第一次使用設定時帶大家打開
+const voiceCard = os => `<div class="card">${tips('跑步時用耳機聽通知', os === 'android'
+  ? ['開啟 Google 助理設定', '找到朗讀通知並打開', '各品牌位置略有不同']
+  : ['開啟手機設定', '點通知再點朗讀通知', '打開朗讀通知', '下方清單中打開 CRUFU', '只支援 AirPods 和 Beats 耳機'])}</div>`;
 function pushCard(setup) {
   const st = push.state;
   const body = st === 'on' && setup ? `<div>✅ 通知已開啟</div>
@@ -246,10 +250,7 @@ function pushCard(setup) {
     : st === 'checking' ? '<div class="muted">檢查中…</div>'
     : tips('這個瀏覽器不支援通知', ['Android 請用 Chrome 打開', 'iPhone 請用 Safari 打開', 'iPhone 要 iOS 16.4 以上']);
   return `<div class="card">${body}
-    ${tips('什麼時候會通知', ['跑者剩 500 公尺', '自動交棒完成', '跑者停留超過 3 分鐘', '收不到跑者位置', '手機鎖螢幕也收得到', '自己跑時只收剩 500 公尺和交棒'])}
-    ${tips('用耳機聽通知', isIOS
-      ? ['設定的通知裡打開朗讀通知', '清單中打開 CRUFU', '只支援 AirPods 和部分 Beats', '沒戴耳機時不會唸']
-      : ['Google 助理設定打開朗讀通知', '各品牌位置不同', '沒戴耳機時不會唸'])}</div>`;
+    ${setup ? '' : tips('什麼時候會通知', ['跑者剩 500 公尺', '自動交棒完成', '跑者停留超過 3 分鐘', '收不到跑者位置', '手機鎖螢幕也收得到', '自己跑時只收剩 500 公尺和交棒'])}</div>`;
 }
 
 // ---------- 第一次使用設定：我是誰 → OwnTracks 定位 → 通知 ----------
@@ -286,7 +287,7 @@ function openSetup() {
     <div id="ot-manual"></div>`;
   const step = (ok, t) => `<h2>${ok ? '✅' : '⬜'} ${t}</h2>`;
   openSheet(`<div class="sheet-head" id="setup-sheet"><h3>第一次使用設定</h3><button data-act="close">稍後</button></div>
-    <p class="muted" style="font-size:13px;margin-top:0">三個步驟，做完隊友就看得到你的位置，比賽中的提醒你也收得到。</p>
+    <p class="muted" style="font-size:13px;margin-top:0">照步驟做完，隊友就看得到你的位置，比賽中的提醒你也收得到。</p>
     ${step(!!me, '① 你是誰')}
     <div class="card"><div class="kv"><span>我是</span><select data-act="set-me"><option value="">請選擇</option>${RUNNERS.map(r => `<option value="${r}" ${r === me ? 'selected' : ''}>${r} 號 · ${runnerName(r)}</option>`).join('')}</select></div></div>
     ${step(locOk, '② 定位（OwnTracks）')}
@@ -296,6 +297,7 @@ function openSetup() {
     </div>
     ${step(push.state === 'on', '③ 通知')}
     ${pushCard(true)}
+    ${push.state === 'on' ? `<h2>🎧 ④ 耳機語音</h2>${voiceCard(os)}` : ''}
     <button class="btn" data-act="setup-done" style="margin-top:14px">完成</button>`);
 }
 function refreshSetup() {
