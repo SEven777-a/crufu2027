@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0e0f12">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -236,6 +236,11 @@ select option:disabled { color: #666; }
 .toast { position: fixed; left: 50%; bottom: calc(var(--nav-h) + 20px); transform: translateX(-50%); background: #fff;
   color: #111; padding: 10px 16px; border-radius: 999px; font-size: 14px; z-index: 3000; display: none; }
 </style>
+<style>html, body { touch-action: pan-x pan-y; }</style>
+<script>
+// 整頁不讓兩指縮放（iOS 不理 user-scalable=no，要擋 gesture 事件）；地圖裡照常可以縮放
+document.addEventListener('gesturestart', e => { if (!e.target.closest || !e.target.closest('.leaflet-container')) e.preventDefault(); }, { passive: false });
+</script>
 </head>
 <body>
 <section id="tab-me" class="tab active"></section>
@@ -266,6 +271,6 @@ select option:disabled { color: #666; }
 <script src="data.js?v=8"></script>
 <!-- 網址加 ?sim 進入模擬模式（假的 10 人比賽，不連真的資料庫） -->
 <script>if (/[?&]sim\b/.test(location.search)) document.write('<script src="sim.js?v=3"><\/script>');</script>
-<script src="app.js?v=34"></script>
+<script src="app.js?v=35"></script>
 </body>
 </html>

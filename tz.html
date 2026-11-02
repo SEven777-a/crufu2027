@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="田中馬">
@@ -58,6 +58,11 @@ header .st { font-size: 12px; color: var(--muted); }
 .row .pb i { display: block; height: 100%; background: var(--c); }
 .nokey { padding: 24px 16px; line-height: 1.7; }
 </style>
+<style>html, body { touch-action: pan-x pan-y; }</style>
+<script>
+// 整頁不讓兩指縮放（iOS 不理 user-scalable=no，要擋 gesture 事件）；地圖裡照常可以縮放
+document.addEventListener('gesturestart', e => { if (!e.target.closest || !e.target.closest('.leaflet-container')) e.preventDefault(); }, { passive: false });
+</script>
 </head>
 <body>
 <header><h1>🌾 田中馬 隊友位置</h1><span class="st" id="st">連線中…</span></header>
