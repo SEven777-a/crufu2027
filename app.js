@@ -88,6 +88,17 @@ function readHash() {
   return got;
 }
 readHash();
+// iOS 26 主畫面版畫面高度被算短：量出跟螢幕差多少，補到 --ios-gap（底部導覽列往下貼齊）
+function fixIosGap() {
+  if (!isIOS || !isStandalone) return;
+  const portrait = innerHeight > innerWidth;
+  const full = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+  const gap = full - innerHeight;
+  document.documentElement.style.setProperty('--ios-gap', gap > 8 && gap < 120 ? gap + 'px' : '0px');
+}
+fixIosGap();
+addEventListener('resize', fixIosGap);
+addEventListener('orientationchange', () => setTimeout(fixIosGap, 300));
 const canEdit = () => !sync.key || sync.admin;
 
 async function api(op, body = {}) {
@@ -469,6 +480,22 @@ function schedule(now, st) {
 }
 
 // 進行中那棒：推估完成比例與所在公里數（之後有 GPS 就改用實際位置）
+// 進度條上放跑者頭像，頭像跟著進度往前移
+const avBar = (frac, r) => { const w = Math.min(100, Math.max(0, frac * 100)).toFixed(1);
+  return `<div class="av-bar"><div class="bar"><i style="width:${w}%"></i></div><img src="${ICONS.runner(r)}" alt="" style="left:${w}%"></div>`; };
+// 全隊人龍：每輪一列，每棒一個頭像依路線長度排開；跑完亮、跑步中放大、還沒跑變淡
+function chainBar(sch, now) {
+  return [0, 1, 2].map(k => {
+    const rs = sch.slice(k * 10, k * 10 + 10), k0 = rs[0].L.startKm, span = rs[9].L.endKm - k0;
+    const run = rs.find(s => s.status === 'run');
+    const done = rs.filter(s => s.status === 'done');
+    const head = run ? run.L.startKm + run.L.km * progressOf(run, now).frac : done.length ? Math.max(...done.map(s => s.L.endKm)) : k0;
+    return `<div class="chain"><span class="chain-n">${k + 1}</span><div class="chain-row">
+      <div class="bar"><i style="width:${Math.max(0, (head - k0) / span * 100).toFixed(1)}%"></i></div>
+      ${rs.map(s => `<img class="${s.status}" src="${ICONS.runner(s.runner)}" alt="" style="left:${((s.L.startKm + s.L.km / 2 - k0) / span * 100).toFixed(1)}%;border-color:var(--car${s.car})">`).join('')}
+    </div></div>`;
+  }).join('');
+}
 function progressOf(s, now) {
   const g = gpsOf(s, now);
   if (g && !g.off) return { frac: Math.min(0.99, g.frac), km: g.km, g };
@@ -593,7 +620,7 @@ function renderMe(now, sch) {
     hero = `<div class="hero car${next.car}">
       <div class="label">你正在跑 · 第 ${next.n} 棒 · Car${next.car}</div>
       <div class="big num" data-elapsed="${next.start}">${fmtDur((now - next.start) / 1000)}</div>
-      <div class="bar"><i style="width:${(p.frac * 100).toFixed(0)}%"></i></div>
+      ${avBar(p.frac, next.runner)}
       <div class="row"><span>推估 ${(p.frac * 100).toFixed(0)}% · ${(next.L.km * (1 - p.frac)).toFixed(1)} km 到交棒點</span><span>預計 ${fmtT(next.end)}</span></div>
       <button class="btn" data-act="finish" data-n="${next.n}">完成交棒</button></div>`;
   } else {
@@ -713,7 +740,7 @@ function renderLegs(now, sch, st) {
       <div class="name">${runnerName(run.runner)}</div>
       <div class="row" style="margin-top:8px"><span><span style="font-size:12px;opacity:.85">本棒進度</span><br><span class="big num" style="font-size:38px">${(p.frac * 100).toFixed(0)}%</span></span>
         <span style="text-align:right">預計交棒<br><b class="num" style="font-size:28px">${fmtT(run.end)}</b></span></div>
-      <div class="bar"><i style="width:${(p.frac * 100).toFixed(0)}%"></i></div>
+      ${avBar(p.frac, run.runner)}
       <div class="row" style="font-size:13px"><span>已跑 <span class="num" data-elapsed="${run.start}">${fmtDur((now - run.start) / 1000)}</span>（${p.g && !p.g.off ? 'GPS' : '推估'}）</span>
         <span>${nx ? `下一棒 ${runnerName(nx.runner)} · Car${nx.car}` : '最後一棒'}</span></div>
       ${p.g ? `<div style="font-size:13px;margin-top:4px">${p.g.off ? '⚠ 偏離路線 · ' : ''}${p.g.pace ? `目前配速 <b class="num">${fmtPace(p.g.pace)}</b> · ` : ''}${p.g.avg ? `本棒平均 <b class="num">${fmtPace(p.g.avg)}</b> · ` : ''}GPS ${agoText(p.g.t)}</div>` : ''}
@@ -738,7 +765,7 @@ function renderLegs(now, sch, st) {
       <div class="row" style="align-items:flex-end;margin-top:4px">
         <span class="big num" style="font-size:34px">${(kmDone / D.totalKm * 100).toFixed(0)}%</span>
         <span style="text-align:right">預計完賽<br><b class="num ${last.end > cutoff ? 'slow' : ''}" style="font-size:24px">${fmtT(last.end)}</b></span></div>
-      <div class="bar"><i style="width:${(kmDone / D.totalKm * 100).toFixed(1)}%"></i></div>
+      ${chainBar(sch, now)}
       <div class="row" style="font-size:13px"><span>${kmDone.toFixed(1)} / ${D.totalKm} km · 比預定 ${ref ? fmtDelta(delta) : '—'}</span>
         <span>關門 ${fmtT(cutoff)} · ${last.end > cutoff ? '<span class="slow">超過關門！</span>' : `餘裕 ${fmtLong((cutoff - last.end) / 1000)}`}</span></div>
     </div>
@@ -1028,6 +1055,7 @@ function openAdmin() {
         <div class="muted" style="font-size:12px;padding-top:12px">模擬隊友第一次使用：清掉這支手機記住的隊伍密碼、管理員、我是誰、通知訂閱，變回剛拿到連結的樣子（雲端資料不受影響）。</div>
         <button class="btn ghost" data-act="reset-phone" style="margin-top:8px">把這支手機重設成第一次使用（測試用）</button>
     </div>
+    <p class="muted" style="font-size:11px">畫面 ${innerWidth}×${innerHeight}　螢幕 ${screen.width}×${screen.height}　補 ${getComputedStyle(document.documentElement).getPropertyValue('--ios-gap').trim()}</p>
     <h2>比賽紀錄</h2>
     <p class="muted" style="font-size:13px">交棒紀錄全隊同步。清除會清掉全隊的紀錄。</p>
     <button class="btn warn" data-act="reset">清除全隊的比賽紀錄</button>`);

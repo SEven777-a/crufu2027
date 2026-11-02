@@ -25,16 +25,20 @@
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
   font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif; }
 body { overscroll-behavior: none; }
+/* iOS 26 主畫面版：系統把畫面高度算短，底部導覽列會浮在半空。
+   1) 整頁不捲動（只捲各分頁），固定元素才不會跟著跑；2) app.js 量出少掉的高度放進 --ios-gap 補回去 */
+html, body { height: 100dvh; overflow: hidden; }
+:root { --ios-gap: 0px; }
 button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
 .muted { color: var(--muted); }
 .num { font-variant-numeric: tabular-nums; }
 
 /* 分頁與底部導覽 */
-.tab { display: none; position: absolute; inset: 0 0 calc(var(--nav-h) + env(safe-area-inset-bottom)) 0;
+.tab { display: none; position: absolute; inset: 0 0 calc(var(--nav-h) + env(safe-area-inset-bottom) - var(--ios-gap)) 0;
   overflow-y: auto; padding: calc(12px + env(safe-area-inset-top)) 16px 24px; }
 .tab.active { display: block; }
 #tab-map { padding: 0; overflow: hidden; }
-nav { position: fixed; left: 0; right: 0; bottom: 0; height: calc(var(--nav-h) + env(safe-area-inset-bottom));
+nav { position: fixed; left: 0; right: 0; bottom: calc(0px - var(--ios-gap)); height: calc(var(--nav-h) + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom); display: flex; background: #15171b; border-top: 1px solid var(--line); z-index: 1000; }
 nav button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   font-size: 12px; color: var(--muted); }
@@ -78,6 +82,20 @@ h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin: 20px 0 8px;
 .hero .name { font-size: 26px; font-weight: 800; }
 .bar { height: 6px; background: rgba(255,255,255,.3); border-radius: 3px; margin: 12px 0 6px; overflow: hidden; }
 .bar > i { display: block; height: 100%; background: #fff; border-radius: 3px; }
+/* 進度條上的跑者頭像 */
+.av-bar { position: relative; margin: 22px 14px 6px; }
+.av-bar .bar { margin: 0; }
+.av-bar img { position: absolute; top: 3px; width: 30px; height: 30px; transform: translate(-50%, -50%); border-radius: 50%;
+  border: 2px solid #fff; background: #fff; object-fit: cover; box-shadow: 0 1px 4px rgba(0,0,0,.4); transition: left .8s; }
+/* 全隊人龍：每輪一列 */
+.chain { display: flex; align-items: center; gap: 6px; margin: 10px 0 4px; }
+.chain-n { flex: none; width: 16px; font-size: 11px; opacity: .7; text-align: center; }
+.chain-row { position: relative; flex: 1; height: 30px; margin: 0 14px; }
+.chain-row .bar { position: absolute; left: 0; right: 0; top: 12px; margin: 0; }
+.chain-row img { position: absolute; top: 15px; width: 22px; height: 22px; transform: translate(-50%, -50%); border-radius: 50%;
+  border: 2px solid; background: #fff; object-fit: cover; }
+.chain-row img.todo { opacity: .35; filter: grayscale(1); }
+.chain-row img.run { width: 28px; height: 28px; z-index: 2; box-shadow: 0 0 0 2px #fff, 0 0 8px rgba(255,255,255,.7); }
 .hero .btn { margin-top: 14px; }
 .hero .btn:not(.ghost):not(.warn) { background: #fff; color: #111; }
 
@@ -164,7 +182,7 @@ h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin: 20px 0 8px;
 .sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 2000; display: none; }
 .sheet-bg.open { display: block; }
 /* 高度扣掉瀏海與網址列，標題列固定在頂端，捲動時「完成」不會被蓋住 */
-.sheet { position: absolute; left: 0; right: 0; bottom: 0; max-height: 80vh;
+.sheet { position: absolute; left: 0; right: 0; bottom: calc(0px - var(--ios-gap)); max-height: 80vh;
   max-height: calc(100dvh - env(safe-area-inset-top) - 32px); overflow-y: auto; background: var(--bg);
   border-radius: 20px 20px 0 0; padding: 0 16px calc(24px + env(safe-area-inset-bottom)); }
 .sheet-head { display: flex; justify-content: space-between; align-items: center; margin: 0 -16px 8px;
@@ -248,6 +266,6 @@ select option:disabled { color: #666; }
 <script src="data.js?v=8"></script>
 <!-- 網址加 ?sim 進入模擬模式（假的 10 人比賽，不連真的資料庫） -->
 <script>if (/[?&]sim\b/.test(location.search)) document.write('<script src="sim.js?v=3"><\/script>');</script>
-<script src="app.js?v=32"></script>
+<script src="app.js?v=34"></script>
 </body>
 </html>
