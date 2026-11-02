@@ -171,6 +171,16 @@ h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin: 20px 0 8px;
 .car-pin.img { width: 42px; height: 42px; padding: 0; background: #282b32; overflow: hidden; border-width: 3px; }
 .car-pin.img img { width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; }
 #sheet select:disabled, #sheet input:disabled, #sheet button:disabled { opacity: .55; }
+/* 選頭像 */
+.my-av { display: flex; align-items: center; gap: 10px; }
+.my-av img { width: 40px; height: 40px; border-radius: 50%; border: 2px solid var(--accent); object-fit: cover; }
+.av-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.av-opt { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px; background: #262a33;
+  border: 2px solid #3a3f4b; border-radius: 14px; }
+.av-opt img { height: 72px; image-rendering: pixelated; }
+.av-opt span { font-size: 12px; color: var(--muted); }
+.av-opt.on { border-color: var(--accent); } .av-opt.on span { color: var(--accent); font-weight: 700; }
+.av-opt:disabled { opacity: .35; }
 /* 彈出視窗（第一次使用設定、設定）裡的卡片：比背景亮一階並加邊框，才分得出區塊；卡片內的按鈕、輸入框再亮一階 */
 #sheet .card { background: #262a33; border: 1px solid #3a3f4b; }
 #sheet .card .btn.ghost, #sheet .card select, #sheet .card input, #sheet .card .chip.plain { background: #343a46; }
@@ -269,6 +279,6 @@ document.addEventListener('gesturestart', e => { if (!e.target.closest || !e.tar
 <script src="data.js?v=8"></script>
 <!-- 網址加 ?sim 進入模擬模式（假的 10 人比賽，不連真的資料庫） -->
 <script>if (/[?&]sim\b/.test(location.search)) document.write('<script src="sim.js?v=3"><\/script>');</script>
-<script src="app.js?v=42"></script>
+<script src="app.js?v=43"></script>
 </body>
 </html>

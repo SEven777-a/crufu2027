@@ -23,8 +23,11 @@ const RUNNERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 const OVERHEAD_SEC = 60;                   // 每棒交棒、找人的時間
 const LEVEL_COLOR = { 低: '#22c55e', 中: '#f59e0b', 難: '#ef4444' };
 const CAR_COLOR = { 1: '#e5484d', 2: '#3b82f6' };
-// 地圖圖示：icons/ 裡每位跑者一張頭像（runner1～10.png）、兩台車各一張；原始大圖在專案的 icons_src/
-const ICONS = { runner: r => `icons/runner${r}.png`, car1: 'icons/car1.png', car2: 'icons/car2.png' };
+// 頭像圖組：每組兩張 icons/runner<id>.png（大頭）＋ icons/run<id>.png（奔跑小人）；原始大圖在專案的 icons_src/
+// 新增圖組時把號碼加進 AVATAR_IDS。每個人在設定裡自己選，沒選的用跟號碼同號的那組
+const AVATAR_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const avatarOf = r => (cfg.avatars && cfg.avatars[r]) || r;
+const ICONS = { runner: r => `icons/runner${avatarOf(r)}.png`, run: r => `icons/run${avatarOf(r)}.png`, car1: 'icons/car1.png', car2: 'icons/car2.png' };
 // 模擬模式（網址加 ?sim，sim.js 提供假資料）的存檔加 sim. 前綴，不會蓋掉正式的設定與隊伍密碼
 const LS_PRE = window.CRUFU_SIM ? 'sim.' : '';
 const LS_CFG = LS_PRE + 'crufu.cfg.v1', LS_STATE = LS_PRE + 'crufu.state.v1';
@@ -41,6 +44,7 @@ const cfg = load(LS_CFG, {
   planStart: D.planStart,                   // 預計出發時間（抽籤梯次公布後改）
   paces: Object.fromEntries(RUNNERS.map(r => [r, 420])),  // 每人平地配速（秒/公里）
   names: {},                                // 隊員名字 {號碼: 名字}，沒填的顯示「N 號」
+  avatars: {},                              // 頭像 {號碼: 圖組 id}，隊友各自在設定裡選（雲端同步）
   order: [...RUNNERS],                      // 每輪 10 棒的跑者順序；前 5 棒坐 Car1、後 5 棒坐 Car2
   assign: {},                               // 個別棒次調整 {棒次: 跑者}，沒填的照 order
   sub: {},                                  // 受傷代跑的棒次 {棒次: true}，允許同一輪有人多跑
@@ -59,7 +63,7 @@ const saveState = () => save(LS_STATE, state);
 // 隊伍密碼從隊友連結的 #k=… 帶進來，存在這支手機；管理員密碼只有隊長手機有
 const API = 'https://ifeclpphlctouqfzbdsb.supabase.co/functions/v1/team';
 const LS_KEY = LS_PRE + 'crufu.key.v1', LS_PIN = LS_PRE + 'crufu.pin.v1', LS_PEND = LS_PRE + 'crufu.pending.v1';
-const SHARED = ['planStart', 'paces', 'names', 'order', 'assign', 'sub', 'testPoint'];   // 全隊共用、只有管理員能改的設定
+const SHARED = ['planStart', 'paces', 'names', 'order', 'assign', 'sub', 'testPoint', 'avatars'];   // 全隊共用、只有管理員能改的設定
 const lsGet = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
 const lsSet = (k, v) => { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) { /* 存不了就算了 */ } };
 const sync = { key: lsGet(LS_KEY), pin: lsGet(LS_PIN), admin: false, ok: false, err: '', last: 0,
@@ -483,7 +487,7 @@ function schedule(now, st) {
 // 進度條：圖示站在條上，跟著進度往前移。個人用奔跑小人，全隊用一台車（跑步中那棒所屬的車）
 const pctW = f => Math.min(100, Math.max(0, f * 100)).toFixed(1);
 const figBar = (frac, src, cls) => `<div class="fig-bar ${cls}"><div class="bar"><i style="width:${pctW(frac)}%"></i></div><img src="${src}" alt="" style="left:${pctW(frac)}%"></div>`;
-const avBar = (frac, r) => figBar(frac, `icons/run${r}.png`, 'runner');
+const avBar = (frac, r) => figBar(frac, ICONS.run(r), 'runner');
 function carsBar(sch, now) {
   const run = sch.find(s => s.status === 'run'), next = sch.find(s => s.status === 'todo');
   const km = run ? run.L.startKm + run.L.km * progressOf(run, now).frac : Math.max(0, ...sch.filter(s => s.status === 'done').map(s => s.L.endKm));
@@ -655,8 +659,8 @@ function renderMe(now, sch) {
 }
 
 
-// 交棒圖示：跑者像素小人（icons/run<號碼>.png）＋名牌（文字用該棒所屬車的顏色）
-const runnerFig = (r, label, car, me) => `<div class="fig${me ? ' me' : ''}"><img src="icons/run${r}.png" alt=""><div class="bib" style="color:${CAR_COLOR[car]}">${esc(label)}</div></div>`;
+// 交棒圖示：跑者像素小人（icons/run<頭像 id>.png）＋名牌（文字用該棒所屬車的顏色）
+const runnerFig = (r, label, car, me) => `<div class="fig${me ? ' me' : ''}"><img src="${ICONS.run(r)}" alt=""><div class="bib" style="color:${CAR_COLOR[car]}">${esc(label)}</div></div>`;
 
 // 本車任務：本車在跑就顯示下一個交接點；本車空檔就顯示下一個任務與剩餘時間
 function carTaskCard(sch) {
@@ -1030,6 +1034,16 @@ function toLocalInput(ms) {   // datetime-local 用台灣時間顯示
   const d = new Date(ms + 8 * 3600e3);
   return d.toISOString().slice(0, 16);
 }
+// 選頭像：別人正在用的變淡、標名字，不能選
+function openAvatarPick() {
+  const used = {};
+  RUNNERS.forEach(r => { if (r !== cfg.me) used[avatarOf(r)] = r; });
+  const mine = avatarOf(cfg.me);
+  openSheet(`<div class="sheet-head"><h3>選頭像</h3><button data-act="settings">返回</button></div>
+    <div class="av-grid">${AVATAR_IDS.map(id => `<button class="av-opt${id === mine ? ' on' : ''}" data-act="avatar-set" data-id="${id}" ${used[id] ? 'disabled' : ''}>
+      <img src="icons/run${id}.png" alt=""><span>${id === mine ? '使用中' : used[id] ? runnerName(used[id]) : '可選'}</span></button>`).join('')}</div>
+    <p class="muted" style="font-size:12px">換了之後全隊的地圖、進度條都會一起換。</p>`);
+}
 // 管理工具：只有管理員解鎖後從設定頁進來
 function openAdmin() {
   if (!sync.admin) return openSettings();
@@ -1071,6 +1085,7 @@ function openSettings() {
     ${sync.key ? `<button class="btn ghost" data-act="setup" style="margin-bottom:10px;border:1.5px solid var(--accent)">第一次使用設定（我是誰、定位、通知）</button>` : ''}
     <div class="card">
       <div class="kv"><span>我是</span><select data-act="set-me">${RUNNERS.map(r => `<option value="${r}" ${r === cfg.me ? 'selected' : ''}>${runnerName(r)}</option>`).join('')}</select></div>
+      ${cfg.me && sync.key ? `<div class="kv"><span>我的頭像</span><span class="my-av"><img src="${ICONS.runner(cfg.me)}" alt=""><button class="chip plain" data-act="avatar-pick">換頭像</button></span></div>` : ''}
       <div class="kv"><span>預計出發時間</span><input type="datetime-local" data-act="set-start" value="${toLocalInput(ps)}"></div>
     </div>
     <div class="row"><h2>棒次順序</h2><button class="chip plain" data-act="rules">📘 換棒規則</button></div>
@@ -1236,6 +1251,16 @@ document.addEventListener('click', e => {
         autoSeen = {}; saveAuto(); toast('已清除所有測試資料'); closeSheet(); render(); }).catch(err => toast(err.message));
       break;
     case 'admin': openAdmin(); break;
+    case 'avatar-pick': openAvatarPick(); break;
+    case 'avatar-set': {
+      const id = +a.dataset.id;
+      if (id === avatarOf(cfg.me)) break;
+      a.disabled = true;
+      api('avatar', { person: String(cfg.me), id })
+        .then(j => { cfg.avatars = j.avatars; saveCfg(); toast('頭像已更換'); openAvatarPick(); render(); })
+        .catch(err => { toast(err.message); doSync(); openAvatarPick(); });
+      break;
+    }
     case 'tp-set':
       if (!navigator.geolocation) { toast('這個瀏覽器拿不到位置'); break; }
       toast('取得位置中…');

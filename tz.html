@@ -134,7 +134,8 @@ const loc = {}, markers = {};
 // 每個人上次對到的公里數存在手機裡，重新整理後接著算（3 小時內有效）
 let lastKm = {};
 try { const v = JSON.parse(localStorage.getItem('tz.km.v1')); if (v && Date.now() - v.t < 3 * 3600e3) lastKm = v.km; } catch (e) { lastKm = {}; }
-let names = {}, since = null, ok = false, err = '';
+let names = {}, avatars = {}, since = null, ok = false, err = '';
+const avatarSrc = r => `icons/runner${avatars[r] || r}.png`;
 function addLoc(r) {
   const a = (loc[r.person] ||= []);
   a.push({ t: Date.parse(r.recorded_at), lat: r.lat, lon: r.lon, batt: r.batt });
@@ -161,6 +162,7 @@ async function sync() {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || `連線錯誤 ${r.status}`);
     names = (j.config && j.config.data && j.config.data.names) || names;
+    avatars = (j.config && j.config.data && j.config.data.avatars) || avatars;
     j.locations.forEach(addLoc);
     since = j.locations.length ? j.locations[j.locations.length - 1].received_at : (since || j.now);
     ok = true; err = '';
@@ -188,7 +190,7 @@ function render() {
     const fresh = now - p.t < FRESH, c = COLORS[r - 1];
     rows.push({ r, p, sn, fresh, c, pc: pace(a) });
     if (!fresh) { if (markers[r]) markers[r].remove(); continue; }
-    const html = `<div class="crew-pin"><div class="av" style="border-color:${r === ME ? 'var(--accent)' : c}"><img src="icons/runner${r}.png" alt=""></div><span>${r === ME ? '我' : name(r)}</span></div>`;
+    const html = `<div class="crew-pin"><div class="av" style="border-color:${r === ME ? 'var(--accent)' : c}"><img src="${avatarSrc(r)}" alt=""></div><span>${r === ME ? '我' : name(r)}</span></div>`;
     (markers[r] ||= L.marker([0, 0], { zIndexOffset: r === ME ? 960 : 950 }))
       .setIcon(L.divIcon({ className: 'pin-wrap', iconSize: [0, 0], html })).setLatLng([p.lat, p.lon]).addTo(map);
   }
@@ -200,12 +202,12 @@ function render() {
   document.getElementById('prog').innerHTML = `<div class="lab"><span>賽道進度</span><span>${on.length ? `領先 ${lead.toFixed(1)} / ${D.totalKm.toFixed(1)} K` : '還沒有人在賽道上'}</span></div>
     <div class="track"><div class="rail"><i style="width:${pct(lead)}%"></i></div>
     ${[0, 5, 10, 15, 21.1].map(k => `<span class="tick" style="left:${pct(k)}%">${k === 21.1 ? '終' : k + 'K'}</span>`).join('')}
-    ${on.slice().reverse().map(x => `<div class="av${x.r === ME ? ' me' : ''}" style="left:${pct(x.sn.km)}%;--c:${x.c}" data-r="${x.r}"><img src="icons/runner${x.r}.png" alt=""></div>`).join('')}</div>`;
+    ${on.slice().reverse().map(x => `<div class="av${x.r === ME ? ' me' : ''}" style="left:${pct(x.sn.km)}%;--c:${x.c}" data-r="${x.r}"><img src="${avatarSrc(x.r)}" alt=""></div>`).join('')}</div>`;
   document.getElementById('list').innerHTML = rows.length ? rows.map(x => {
     const gap = mine && x.r !== ME && x.sn && x.fresh ? x.sn.km - mine.sn.km : null;
     const gapTxt = gap == null ? '' : ` · ${gap >= 0 ? '在我前面' : '在我後面'} ${Math.abs(gap).toFixed(1)} K`;
     return `<div class="row${x.r === ME ? ' me' : ''}${x.fresh ? '' : ' old'}" style="--c:${x.c}" data-r="${x.r}">
-      <img src="icons/runner${x.r}.png" alt="">
+      <img src="${avatarSrc(x.r)}" alt="">
       <div class="n"><b>${name(x.r)}</b>${x.sn ? ` <small style="color:var(--muted)">${Math.round(x.sn.km / D.totalKm * 100)}%</small>` : ''}<div>${ago(x.p.t)}${x.pc ? ' · ' + x.pc : ''}${x.p.batt != null ? ` · 🔋${x.p.batt}%` : ''}${gapTxt}</div>${x.sn ? `<div class="pb"><i style="width:${Math.min(100, x.sn.km / D.totalKm * 100).toFixed(1)}%"></i></div>` : ''}</div>
       <div class="km">${x.sn ? x.sn.km.toFixed(1) + '<small> K</small>' : '<small>不在賽道上</small>'}</div></div>`;
   }).join('') : `<div class="empty">還沒有隊友回報位置。<br>打開 OwnTracks（跟 CRUFU app 同一個設定）就會出現，約 1 分鐘內。</div>`;
