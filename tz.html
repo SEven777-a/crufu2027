@@ -23,7 +23,7 @@ header .st { font-size: 12px; color: var(--muted); }
 .tools { position: absolute; right: 10px; top: 10px; z-index: 800; display: flex; flex-direction: column; gap: 6px; }
 .tools button { background: #fff; color: #111; border: 0; border-radius: 10px; padding: 8px 10px; font-size: 14px;
   box-shadow: 0 1px 4px rgba(0,0,0,.3); font-family: inherit; }
-#list { max-height: 38vh; overflow-y: auto; padding: 6px 12px calc(env(safe-area-inset-bottom) + 10px); }
+#list { max-height: 30vh; overflow-y: auto; padding: 6px 12px calc(env(safe-area-inset-bottom) + 10px); }
 .row { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--line); }
 .row img { width: 36px; height: 36px; border-radius: 50%; border: 3px solid var(--c); background: #fff; object-fit: cover; }
 .row .n { flex: 1; min-width: 0; }
@@ -42,6 +42,20 @@ header .st { font-size: 12px; color: var(--muted); }
 .kmpin { transform: translate(-50%, -50%); background: #fff; color: #1d4ed8; border: 2px solid #1d4ed8; border-radius: 10px;
   font-size: 11px; font-weight: 700; padding: 0 4px; white-space: nowrap; width: max-content; }
 .kmpin.se { background: #1d4ed8; color: #fff; font-size: 13px; padding: 2px 6px; }
+/* 全隊賽道進度條：頭像標在各自跑到的公里數 */
+#prog { padding: 4px 16px 8px; }
+#prog .lab { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+#prog .track { position: relative; height: 54px; margin: 0 14px; }
+#prog .rail { position: absolute; left: 0; right: 0; bottom: 8px; height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+#prog .rail i { display: block; height: 100%; background: linear-gradient(90deg, #3b82f6, #22c55e); border-radius: 4px; }
+#prog .tick { position: absolute; bottom: 0; transform: translateX(-50%); font-size: 10px; color: var(--muted); }
+#prog .tick::before { content: ""; position: absolute; left: 50%; bottom: 12px; width: 1px; height: 12px; background: var(--muted); opacity: .5; }
+#prog .av { position: absolute; bottom: 18px; transform: translateX(-50%); width: 28px; height: 28px; border-radius: 50%;
+  border: 2px solid var(--c); background: #fff; overflow: hidden; transition: left .8s; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
+#prog .av img { width: 100%; height: 100%; object-fit: cover; }
+#prog .av.me { border-color: var(--accent); z-index: 2; width: 32px; height: 32px; }
+.row .pb { height: 4px; background: var(--line); border-radius: 2px; margin-top: 5px; overflow: hidden; }
+.row .pb i { display: block; height: 100%; background: var(--c); }
 .nokey { padding: 24px 16px; line-height: 1.7; }
 </style>
 </head>
@@ -49,6 +63,7 @@ header .st { font-size: 12px; color: var(--muted); }
 <header><h1>🌾 田中馬 隊友位置</h1><span class="st" id="st">連線中…</span></header>
 <div id="map" style="position:relative"><div class="tools">
   <button id="b-fit">全路線</button><button id="b-me">我</button><button id="b-sat">衛星</button></div></div>
+<div id="prog"></div>
 <div id="list"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="tz-data.js?v=1"></script>
@@ -175,19 +190,27 @@ function render() {
   // 跑最遠的排前面；不在賽道上的、太久沒回報的排後面
   rows.sort((x, y) => (y.fresh - x.fresh) || ((y.sn ? 1 : 0) - (x.sn ? 1 : 0)) || ((y.sn?.km || 0) - (x.sn?.km || 0)));
   const mine = rows.find(x => x.r === ME && x.fresh && x.sn);
+  const on = rows.filter(x => x.fresh && x.sn), lead = on.length ? Math.max(...on.map(x => x.sn.km)) : 0;
+  const pct = km => Math.min(100, km / D.totalKm * 100).toFixed(1);
+  document.getElementById('prog').innerHTML = `<div class="lab"><span>賽道進度</span><span>${on.length ? `領先 ${lead.toFixed(1)} / ${D.totalKm.toFixed(1)} K` : '還沒有人在賽道上'}</span></div>
+    <div class="track"><div class="rail"><i style="width:${pct(lead)}%"></i></div>
+    ${[0, 5, 10, 15, 21.1].map(k => `<span class="tick" style="left:${pct(k)}%">${k === 21.1 ? '終' : k + 'K'}</span>`).join('')}
+    ${on.slice().reverse().map(x => `<div class="av${x.r === ME ? ' me' : ''}" style="left:${pct(x.sn.km)}%;--c:${x.c}" data-r="${x.r}"><img src="icons/runner${x.r}.png" alt=""></div>`).join('')}</div>`;
   document.getElementById('list').innerHTML = rows.length ? rows.map(x => {
     const gap = mine && x.r !== ME && x.sn && x.fresh ? x.sn.km - mine.sn.km : null;
     const gapTxt = gap == null ? '' : ` · ${gap >= 0 ? '在我前面' : '在我後面'} ${Math.abs(gap).toFixed(1)} K`;
     return `<div class="row${x.r === ME ? ' me' : ''}${x.fresh ? '' : ' old'}" style="--c:${x.c}" data-r="${x.r}">
       <img src="icons/runner${x.r}.png" alt="">
-      <div class="n"><b>${name(x.r)}</b><div>${ago(x.p.t)}${x.pc ? ' · ' + x.pc : ''}${x.p.batt != null ? ` · 🔋${x.p.batt}%` : ''}${gapTxt}</div></div>
+      <div class="n"><b>${name(x.r)}</b>${x.sn ? ` <small style="color:var(--muted)">${Math.round(x.sn.km / D.totalKm * 100)}%</small>` : ''}<div>${ago(x.p.t)}${x.pc ? ' · ' + x.pc : ''}${x.p.batt != null ? ` · 🔋${x.p.batt}%` : ''}${gapTxt}</div>${x.sn ? `<div class="pb"><i style="width:${Math.min(100, x.sn.km / D.totalKm * 100).toFixed(1)}%"></i></div>` : ''}</div>
       <div class="km">${x.sn ? x.sn.km.toFixed(1) + '<small> K</small>' : '<small>不在賽道上</small>'}</div></div>`;
   }).join('') : `<div class="empty">還沒有隊友回報位置。<br>打開 OwnTracks（跟 CRUFU app 同一個設定）就會出現，約 1 分鐘內。</div>`;
 }
-document.getElementById('list').addEventListener('click', e => {
-  const row = e.target.closest('.row'), a = row && loc[row.dataset.r], p = a && a[a.length - 1];
+const jump = e => {
+  const row = e.target.closest('[data-r]'), a = row && loc[row.dataset.r], p = a && a[a.length - 1];
   if (p) map.setView([p.lat, p.lon], 16);
-});
+};
+document.getElementById('list').addEventListener('click', jump);
+document.getElementById('prog').addEventListener('click', jump);
 document.getElementById('b-fit').onclick = fit;
 document.getElementById('b-sat').onclick = () => { sat = !sat; setBase(); };
 document.getElementById('b-me').onclick = () => {
