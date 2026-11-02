@@ -3,7 +3,7 @@
 // 本機 localStorage 當快取（沒訊號時照樣能看、能按交棒）
 'use strict';
 
-// 網址帶 reset（例如 …/#k=隊伍密碼&reset）：清掉這支手機記住的一切、取消通知訂閱，再當成第一次打開（測試新手流程用）
+// 網址帶 reset（例如 …/#k=隊伍密碼&reset）：清掉這支手機記住的一切、取消通知訂閱，再當成第一次打開（測試第一次使用流程用）
 {
   const h = new URLSearchParams(location.hash.slice(1));
   if (h.has('reset') && !window.CRUFU_SIM) {
@@ -47,7 +47,7 @@ const cfg = load(LS_CFG, {
   demo: true,                               // 示範模式：用模擬時間與模擬交棒紀錄
   demoHours: 7.5,                           // 示範模式的「現在」＝出發後幾小時
   testPoint: null,                          // 測試交接點 {lat, lon}：管理員測試自動交棒用，正式比賽前要取消
-  os: '',                                   // 新手設定選的手機系統 ios／android（空的就自動判斷）
+  os: '',                                   // 第一次使用設定選的手機系統 ios／android（空的就自動判斷）
   showCrew: false,                          // 地圖顯示全隊每個人的位置（只存在這支手機）
   mapStyle: 'street',                       // 地圖底圖：street 街道（類似 Google 地圖）／dark 深色／sat 衛星
 });
@@ -253,7 +253,7 @@ function pushCard(setup) {
       : ['Google 助理設定打開朗讀通知', '各品牌位置不同', '沒戴耳機時不會唸'])}</div>`;
 }
 
-// ---------- 新手設定：我是誰 → OwnTracks 定位 → 通知 ----------
+// ---------- 第一次使用設定：我是誰 → OwnTracks 定位 → 通知 ----------
 const OT_STORE = { ios: 'https://apps.apple.com/app/owntracks/id692424691', android: 'https://play.google.com/store/apps/details?id=org.owntracks.android' };
 let otCfg = null, setupShown = false;
 function myLoc() { const a = cfg.me && sync.loc[String(cfg.me)]; return a && a[a.length - 1]; }
@@ -286,7 +286,7 @@ function openSetup() {
     <div class="muted" style="font-size:12px;margin-top:6px">一鍵設定沒反應？<button class="chip plain" data-act="ot-manual">改用手動設定</button></div>
     <div id="ot-manual"></div>`;
   const step = (ok, t) => `<h2>${ok ? '✅' : '⬜'} ${t}</h2>`;
-  openSheet(`<div class="sheet-head" id="setup-sheet"><h3>新手設定</h3><button data-act="close">稍後</button></div>
+  openSheet(`<div class="sheet-head" id="setup-sheet"><h3>第一次使用設定</h3><button data-act="close">稍後</button></div>
     <p class="muted" style="font-size:13px;margin-top:0">三個步驟，做完隊友就看得到你的位置，比賽中的提醒你也收得到。</p>
     ${step(!!me, '① 你是誰')}
     <div class="card"><div class="kv"><span>我是</span><select data-act="set-me"><option value="">請選擇</option>${RUNNERS.map(r => `<option value="${r}" ${r === me ? 'selected' : ''}>${r} 號 · ${runnerName(r)}</option>`).join('')}</select></div></div>
@@ -562,7 +562,7 @@ function nightBox(s) {
 }
 function demoBar() {
   const tp = cfg.testPoint && !cfg.demo
-    ? `<div class="demo-bar"><span>🧪 測試交接點啟用中：自動交棒以「${fmtDT(cfg.testPoint.at)} 設定的位置」為終點，正式比賽前要取消</span><button data-act="settings">設定</button></div>` : '';
+    ? `<div class="demo-bar"><span>🧪 測試交接點啟用中：自動交棒以「${fmtDT(cfg.testPoint.at)} 設定的位置」為終點，正式比賽前要取消</span><button data-act="${sync.admin ? 'admin' : 'settings'}">${sync.admin ? '管理' : '設定'}</button></div>` : '';
   if (!cfg.demo) return tp;
   return `<div class="demo-bar"><span>示範模式：模擬時間 ${fmtDT(nowMs())}，交棒紀錄是假的</span><button data-act="settings">調整</button></div>`;
 }
@@ -1008,6 +1008,29 @@ function toLocalInput(ms) {   // datetime-local 用台灣時間顯示
   const d = new Date(ms + 8 * 3600e3);
   return d.toISOString().slice(0, 16);
 }
+// 管理工具：只有管理員解鎖後從設定頁進來
+function openAdmin() {
+  if (!sync.admin) return openSettings();
+  sheetLeg = null;
+  openSheet(`<div class="sheet-head"><h3>管理工具</h3><button data-act="settings">返回設定</button></div>
+    <h2 style="margin-top:0">隊友連結</h2>
+    <div class="card">
+        <button class="btn ghost" data-act="copy-link">複製隊友連結（含隊伍密碼）</button>
+    </div>
+    <h2>測試</h2>
+    <div class="card">
+        <div class="muted" style="font-size:12px;padding-top:0">正式發布前：清掉測試時的交棒紀錄、提醒紀錄和所有定位（名字、順序、配速、通知訂閱保留）。</div>
+        <button class="btn warn" data-act="purge" style="margin-top:8px">清除所有測試資料</button>
+        <div class="muted" style="font-size:12px;padding-top:12px">測試交接點：把「目前這棒的終點」暫時改成你現在的位置，在家附近走一圈就能測剩 500 m 提醒與自動交棒。</div>
+        ${cfg.testPoint ? `<div class="kv"><span>🧪 啟用中（${fmtDT(cfg.testPoint.at)} 設定）</span><button class="chip plain" data-act="tp-clear">取消</button></div>`
+          : `<button class="btn ghost" data-act="tp-set" style="margin-top:8px">把測試交接點設在我現在的位置</button>`}
+        <div class="muted" style="font-size:12px;padding-top:12px">模擬隊友第一次使用：清掉這支手機記住的隊伍密碼、管理員、我是誰、通知訂閱，變回剛拿到連結的樣子（雲端資料不受影響）。</div>
+        <button class="btn ghost" data-act="reset-phone" style="margin-top:8px">把這支手機重設成第一次使用（測試用）</button>
+    </div>
+    <h2>比賽紀錄</h2>
+    <p class="muted" style="font-size:13px">交棒紀錄全隊同步。清除會清掉全隊的紀錄。</p>
+    <button class="btn warn" data-act="reset">清除全隊的比賽紀錄</button>`);
+}
 function openSettings() {
   sheetLeg = null;
   const ps = Date.parse(cfg.planStart);
@@ -1018,18 +1041,11 @@ function openSettings() {
       ${!sync.key ? `<div class="kv"><span>隊伍密碼</span><span><input id="key-in" style="width:120px" autocomplete="off"> <button class="chip plain" data-act="set-key">連線</button></span></div>
         <div class="muted" style="font-size:12px;padding-top:6px">用隊長傳的連結打開就會自動連線，不用手動輸入。</div>`
       : sync.admin ? `<div class="kv"><span>管理員</span><span>已解鎖 <button class="chip plain" data-act="lock">登出</button></span></div>
-        <button class="btn ghost" data-act="copy-link" style="margin-top:10px">複製隊友連結（含隊伍密碼）</button>
-        <div class="muted" style="font-size:12px;padding-top:10px">正式發布前：清掉測試時的交棒紀錄、提醒紀錄和所有定位（名字、順序、配速、通知訂閱保留）。</div>
-        <button class="btn warn" data-act="purge" style="margin-top:8px">清除所有測試資料</button>
-        <div class="muted" style="font-size:12px;padding-top:12px">測試交接點：把「目前這棒的終點」暫時改成你現在的位置，在家附近走一圈就能測剩 500 m 提醒與自動交棒。</div>
-        ${cfg.testPoint ? `<div class="kv"><span>🧪 啟用中（${fmtDT(cfg.testPoint.at)} 設定）</span><button class="chip plain" data-act="tp-clear">取消</button></div>`
-          : `<button class="btn ghost" data-act="tp-set" style="margin-top:8px">把測試交接點設在我現在的位置</button>`}
-        <div class="muted" style="font-size:12px;padding-top:12px">模擬隊友第一次使用：清掉這支手機記住的隊伍密碼、管理員、我是誰、通知訂閱，變回剛拿到連結的樣子（雲端資料不受影響）。</div>
-        <button class="btn ghost" data-act="reset-phone" style="margin-top:8px">把這支手機重設成新手（測試用）</button>`
+        <button class="btn ghost" data-act="admin" style="margin-top:10px">🛠 管理工具（隊友連結、測試、清除資料）</button>`
       : `<div class="kv"><span>管理員密碼</span><span><input id="pin-in" type="password" style="width:100px" autocomplete="off"> <button class="chip plain" data-act="unlock">解鎖</button></span></div>
         <div class="muted" style="font-size:12px;padding-top:6px">名字、棒次順序、配速、出發時間由管理員設定，全隊同步；交棒誰都可以按。</div>`}
     </div>
-    ${sync.key ? `<button class="btn ghost" data-act="setup" style="margin-bottom:10px">新手設定（我是誰、定位、通知）</button>` : ''}
+    ${sync.key ? `<button class="btn ghost" data-act="setup" style="margin-bottom:10px">第一次使用設定（我是誰、定位、通知）</button>` : ''}
     <div class="card">
       <div class="kv"><span>我是</span><select data-act="set-me">${RUNNERS.map(r => `<option value="${r}" ${r === cfg.me ? 'selected' : ''}>${runnerName(r)}</option>`).join('')}</select></div>
       <div class="kv"><span>預計出發時間</span><input type="datetime-local" data-act="set-start" value="${toLocalInput(ps)}"></div>
@@ -1051,9 +1067,9 @@ function openSettings() {
       ${cfg.demo ? `<div style="padding-top:10px">模擬「出發後 <b id="demo-h">${cfg.demoHours}</b> 小時」＝<b id="demo-t">${fmtDT(nowMs())}</b>
         <input type="range" min="-1" max="30" step="0.25" value="${cfg.demoHours}" data-act="set-demo-h" style="width:100%;margin-top:8px;padding:0"></div>` : ''}
     </div>
-    <h2>比賽紀錄</h2>
-    <p class="muted" style="font-size:13px">${sync.key ? '交棒紀錄全隊同步。清除會清掉全隊的紀錄，只有管理員能做。' : '目前紀錄只存在這支手機。'}</p>
-    ${!sync.key || sync.admin ? `<button class="btn warn" data-act="reset">${sync.key ? '清除全隊的比賽紀錄' : '清除這支手機的比賽紀錄'}</button>` : ''}`);
+    ${sync.key ? '' : `<h2>比賽紀錄</h2>
+    <p class="muted" style="font-size:13px">目前紀錄只存在這支手機。</p>
+    <button class="btn warn" data-act="reset">清除這支手機的比賽紀錄</button>`}`);
   // 不是管理員：共用設定一律唯讀（「我是」和示範模式除外）
   if (!canEdit()) document.querySelectorAll('#sheet [data-act^="set-"], #sheet [data-act="clear-assign"]').forEach(e => {
     if (!['set-me', 'set-demo', 'set-demo-h'].includes(e.dataset.act)) e.disabled = true;
@@ -1160,7 +1176,7 @@ document.addEventListener('click', e => {
     case 'lock': sync.pin = ''; sync.admin = false; lsSet(LS_PIN, ''); toast('已登出管理員'); openSettings(); break;
     case 'setup': openSetup(); document.getElementById('sheet').scrollTop = 0; break;
     case 'setup-done': cfg.setupDone = true; saveCfg(); closeSheet(); render();
-      toast(push.state === 'on' && myLoc() ? '設定完成 👍' : '之後可以在 設定 → 新手設定 繼續'); break;
+      toast(push.state === 'on' && myLoc() ? '設定完成 👍' : '之後可以在 設定 → 第一次使用設定 繼續'); break;
     case 'push-on': case 'push-off': case 'push-test': {
       const act = a.dataset.act; a.disabled = true;
       (act === 'push-on' ? enablePush() : act === 'push-off' ? disablePush() : testPush())
@@ -1196,15 +1212,16 @@ document.addEventListener('click', e => {
       api('purge').then(() => { pending = []; savePending(); state = { raceStart: null, finishes: {} }; saveState(); sync.loc = {};
         autoSeen = {}; saveAuto(); toast('已清除所有測試資料'); closeSheet(); render(); }).catch(err => toast(err.message));
       break;
+    case 'admin': openAdmin(); break;
     case 'tp-set':
       if (!navigator.geolocation) { toast('這個瀏覽器拿不到位置'); break; }
       toast('取得位置中…');
       navigator.geolocation.getCurrentPosition(pos => {
         cfg.testPoint = { lat: +pos.coords.latitude.toFixed(6), lon: +pos.coords.longitude.toFixed(6), at: Date.now() };
-        sharedChanged(); toast(`測試交接點已設定（誤差約 ${Math.round(pos.coords.accuracy)} m）`); openSettings(); render();
+        sharedChanged(); toast(`測試交接點已設定（誤差約 ${Math.round(pos.coords.accuracy)} m）`); openAdmin(); render();
       }, err => toast('拿不到位置：' + err.message), { enableHighAccuracy: true, timeout: 20000 });
       break;
-    case 'tp-clear': cfg.testPoint = null; sharedChanged(); toast('已取消測試交接點'); openSettings(); render(); break;
+    case 'tp-clear': cfg.testPoint = null; sharedChanged(); toast('已取消測試交接點'); openAdmin(); render(); break;
     case 'copy-link': {
       const url = `${location.origin}${location.pathname}?openExternalBrowser=1#k=${encodeURIComponent(sync.key)}`;
       (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject())
