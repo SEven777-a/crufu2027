@@ -1068,7 +1068,7 @@ function openSettings() {
       : `<div class="kv"><span>管理員密碼</span><span><input id="pin-in" type="password" style="width:100px" autocomplete="off"> <button class="chip plain" data-act="unlock">解鎖</button></span></div>
         <div class="muted" style="font-size:12px;padding-top:6px">名字、棒次順序、配速、出發時間由管理員設定，全隊同步；交棒誰都可以按。</div>`}
     </div>
-    ${sync.key ? `<button class="btn ghost" data-act="setup" style="margin-bottom:10px">第一次使用設定（我是誰、定位、通知）</button>` : ''}
+    ${sync.key ? `<button class="btn ghost" data-act="setup" style="margin-bottom:10px;border:1.5px solid var(--accent)">第一次使用設定（我是誰、定位、通知）</button>` : ''}
     <div class="card">
       <div class="kv"><span>我是</span><select data-act="set-me">${RUNNERS.map(r => `<option value="${r}" ${r === cfg.me ? 'selected' : ''}>${runnerName(r)}</option>`).join('')}</select></div>
       <div class="kv"><span>預計出發時間</span><input type="datetime-local" data-act="set-start" value="${toLocalInput(ps)}"></div>
