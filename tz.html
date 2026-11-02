@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="田中馬">
+<title>田中馬隊友位置</title>
+<link rel="apple-touch-icon" href="icons/app-192.png">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root { --bg: #0f172a; --card: #1e293b; --line: #334155; --text: #f1f5f9; --muted: #94a3b8; --accent: #22c55e; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  font-family: -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif; }
+body { display: flex; flex-direction: column; }
+header { padding: calc(env(safe-area-inset-top) + 8px) 16px 8px; display: flex; align-items: center; gap: 8px; }
+header h1 { font-size: 17px; margin: 0; flex: 1; }
+header .st { font-size: 12px; color: var(--muted); }
+#map { flex: 1; min-height: 0; }
+.leaflet-container { font-family: inherit; background: #e5e7eb; }
+.tools { position: absolute; right: 10px; top: 10px; z-index: 800; display: flex; flex-direction: column; gap: 6px; }
+.tools button { background: #fff; color: #111; border: 0; border-radius: 10px; padding: 8px 10px; font-size: 14px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.3); font-family: inherit; }
+#list { max-height: 38vh; overflow-y: auto; padding: 6px 12px calc(env(safe-area-inset-bottom) + 10px); }
+.row { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--line); }
+.row img { width: 36px; height: 36px; border-radius: 50%; border: 3px solid var(--c); background: #fff; object-fit: cover; }
+.row .n { flex: 1; min-width: 0; }
+.row .n b { font-size: 15px; }
+.row .n div { font-size: 12px; color: var(--muted); }
+.row .km { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.row .km small { font-size: 12px; color: var(--muted); font-weight: 400; }
+.row.me b::after { content: "（我）"; color: var(--accent); font-weight: 400; }
+.row.old { opacity: .45; }
+.empty { color: var(--muted); font-size: 14px; padding: 14px 4px; line-height: 1.6; }
+.pin-wrap { background: none; border: 0; }
+.crew-pin { transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center; }
+.crew-pin .av { width: 40px; height: 40px; border-radius: 50%; border: 3px solid; background: #fff; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,.4); }
+.crew-pin img { width: 100%; height: 100%; object-fit: cover; }
+.crew-pin span { margin-top: 2px; background: rgba(15,23,42,.85); color: #fff; font-size: 12px; padding: 1px 6px; border-radius: 8px; white-space: nowrap; }
+.kmpin { transform: translate(-50%, -50%); background: #fff; color: #1d4ed8; border: 2px solid #1d4ed8; border-radius: 10px;
+  font-size: 11px; font-weight: 700; padding: 0 4px; white-space: nowrap; width: max-content; }
+.kmpin.se { background: #1d4ed8; color: #fff; font-size: 13px; padding: 2px 6px; }
+.nokey { padding: 24px 16px; line-height: 1.7; }
+</style>
+</head>
+<body>
+<header><h1>🌾 田中馬 隊友位置</h1><span class="st" id="st">連線中…</span></header>
+<div id="map" style="position:relative"><div class="tools">
+  <button id="b-fit">全路線</button><button id="b-me">我</button><button id="b-sat">衛星</button></div></div>
+<div id="list"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="tz-data.js?v=1"></script>
+<script>
+'use strict';
+// 田中馬看隊友位置用：跟 CRUFU app 共用隊伍密碼、OwnTracks 回報與號碼，只讀不寫（不會觸發任何提醒）
+const D = window.TZ_DATA, T = D.track;     // [lat, lon, 累積 km, 高度 m]
+const API = 'https://ifeclpphlctouqfzbdsb.supabase.co/functions/v1/team';
+const FRESH = 15 * 60e3;                   // 15 分鐘內有回報才畫在地圖上
+const COLORS = ['#e5484d', '#3b82f6', '#f59e0b', '#a855f7', '#14b8a6', '#ec4899', '#84cc16', '#f97316', '#06b6d4', '#6366f1'];
+const lsGet = k => { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* 存不了就算了 */ } };
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// 隊伍密碼：網址 #k= 優先，否則用 CRUFU app 存過的；iPhone 主畫面版存檔是分開的，所以網址上保留密碼
+const h = new URLSearchParams(location.hash.slice(1));
+if (h.get('k')) lsSet('crufu.key.v1', h.get('k'));
+const KEY = h.get('k') || lsGet('crufu.key.v1');
+let ME = 0;
+try { ME = +(JSON.parse(localStorage.getItem('crufu.cfg.v1')) || {}).me || 0; } catch (e) { ME = 0; }
+if (/^(10|[1-9])$/.test(h.get('me') || '')) ME = +h.get('me');
+
+const map = L.map('map', { zoomControl: false, attributionControl: false });
+let base, sat = false;
+function setBase() {
+  if (base) base.remove();
+  base = L.tileLayer(`https://server.arcgisonline.com/ArcGIS/rest/services/${sat ? 'World_Imagery' : 'World_Street_Map'}/MapServer/tile/{z}/{y}/{x}`,
+    { maxZoom: 19 }).addTo(map);
+  base.bringToBack();
+  document.getElementById('b-sat').textContent = sat ? '街道' : '衛星';
+}
+setBase();
+const line = T.map(p => [p[0], p[1]]);
+L.polyline(line, { color: '#000', weight: 9, opacity: .5, interactive: false }).addTo(map);
+L.polyline(line, { color: '#3b82f6', weight: 5, opacity: .95, interactive: false }).addTo(map);
+// 每 5 K 一個里程牌，起終點同一處（鎮公所前）
+const at = km => { const i = T.findIndex(p => p[2] >= km); return i < 0 ? T[T.length - 1] : T[i]; };
+const pin = (p, txt, cls = '', z = 400) => L.marker([p[0], p[1]], { zIndexOffset: z, interactive: false,
+  icon: L.divIcon({ className: 'pin-wrap', iconSize: [0, 0], html: `<div class="kmpin ${cls}">${txt}</div>` }) }).addTo(map);
+pin(T[0], '起終點', 'se', 500);
+[5, 10, 15, 20].forEach(k => pin(at(k), k + 'K'));
+const fit = () => map.fitBounds(L.latLngBounds(line), { padding: [20, 20] });
+fit();
+
+// 把 GPS 點對到路線上的公里數。路線有來回、起終點同一處，所以從上一次的公里數往後找（最多倒退 0.3 K），
+// 離路線 80 m 內才算在賽道上
+function snapKm(lat, lon, prev) {
+  const cx = 111320 * Math.cos(lat * Math.PI / 180), cy = 110540;
+  let best = null, near = null;
+  for (let i = 1; i < T.length; i++) {
+    const a = T[i - 1], b = T[i];
+    const ax = (a[1] - lon) * cx, ay = (a[0] - lat) * cy, bx = (b[1] - lon) * cx, by = (b[0] - lat) * cy;
+    const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+    const f = L2 ? Math.min(1, Math.max(0, -(ax * dx + ay * dy) / L2)) : 0;
+    const d = Math.hypot(ax + f * dx, ay + f * dy), km = a[2] + f * (b[2] - a[2]);
+    if (!near || d < near.off) near = { off: d, km };
+    if (d < 80 && km >= (prev ?? 0) - 0.3 && (!best || km < best.km)) best = { off: d, km };
+  }
+  return best || (near && near.off < 80 ? near : null);
+}
+
+const loc = {}, markers = {};
+// 每個人上次對到的公里數存在手機裡，重新整理後接著算（3 小時內有效）
+let lastKm = {};
+try { const v = JSON.parse(localStorage.getItem('tz.km.v1')); if (v && Date.now() - v.t < 3 * 3600e3) lastKm = v.km; } catch (e) { lastKm = {}; }
+let names = {}, since = null, ok = false, err = '';
+function addLoc(r) {
+  const a = (loc[r.person] ||= []);
+  a.push({ t: Date.parse(r.recorded_at), lat: r.lat, lon: r.lon, batt: r.batt });
+  a.sort((x, y) => x.t - y.t);
+  while (a.length > 1 && a[0].t < Date.now() - 40 * 60e3) a.shift();
+}
+const name = r => names[r] ? esc(names[r]) : `${r} 號`;
+const ago = t => { const m = Math.round((Date.now() - t) / 60e3); return m < 1 ? '剛剛' : `${m} 分鐘前`; };
+const distM = (p, q) => Math.hypot((p.lat - q.lat) * 110540, (p.lon - q.lon) * 111320 * Math.cos(p.lat * Math.PI / 180));
+// 配速：近 5 分鐘走了多少路線公里數；不在賽道上就用直線距離
+function pace(a) {
+  const last = a[a.length - 1], first = a.find(p => last.t - p.t <= 5 * 60e3);
+  if (!first || last.t - first.t < 90e3) return '';
+  const m = distM(first, last);
+  if (m < 50) return '';
+  const s = (last.t - first.t) / 1000 / (m / 1000);
+  return s > 1200 ? '' : `${Math.floor(s / 60)}'${String(Math.round(s % 60)).padStart(2, '0')}"/km`;
+}
+
+async function sync() {
+  try {
+    const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ op: 'sync', key: KEY, since: since || undefined }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `連線錯誤 ${r.status}`);
+    names = (j.config && j.config.data && j.config.data.names) || names;
+    j.locations.forEach(addLoc);
+    since = j.locations.length ? j.locations[j.locations.length - 1].received_at : (since || j.now);
+    ok = true; err = '';
+  } catch (e) { ok = false; err = e.message; }
+  render();
+}
+
+function render() {
+  const now = Date.now();
+  document.getElementById('st').textContent = ok ? `已連線 · ${new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}` : `⚠ ${err || '連線中…'}`;
+  const rows = [];
+  for (let r = 1; r <= 10; r++) {
+    const a = loc[String(r)], p = a && a[a.length - 1];
+    if (!p) { if (markers[r]) markers[r].remove(); continue; }
+    // 沿著時間順序一點一點往前對（跳過已經算過的點），路線重疊的地方才不會對錯段
+    const k = lastKm[r] || {};
+    let sn = null;
+    for (const q of a) {
+      if (q.t <= (k.t || 0)) continue;
+      const m = snapKm(q.lat, q.lon, k.km);
+      if (m) { k.km = m.km; k.t = q.t; }
+    }
+    if (k.km != null) { lastKm[r] = k; sn = p.t === k.t ? { km: k.km } : null; }
+    lsSet('tz.km.v1', JSON.stringify({ t: Date.now(), km: lastKm }));
+    const fresh = now - p.t < FRESH, c = COLORS[r - 1];
+    rows.push({ r, p, sn, fresh, c, pc: pace(a) });
+    if (!fresh) { if (markers[r]) markers[r].remove(); continue; }
+    const html = `<div class="crew-pin"><div class="av" style="border-color:${r === ME ? 'var(--accent)' : c}"><img src="icons/runner${r}.png" alt=""></div><span>${r === ME ? '我' : name(r)}</span></div>`;
+    (markers[r] ||= L.marker([0, 0], { zIndexOffset: r === ME ? 960 : 950 }))
+      .setIcon(L.divIcon({ className: 'pin-wrap', iconSize: [0, 0], html })).setLatLng([p.lat, p.lon]).addTo(map);
+  }
+  // 跑最遠的排前面；不在賽道上的、太久沒回報的排後面
+  rows.sort((x, y) => (y.fresh - x.fresh) || ((y.sn ? 1 : 0) - (x.sn ? 1 : 0)) || ((y.sn?.km || 0) - (x.sn?.km || 0)));
+  const mine = rows.find(x => x.r === ME && x.fresh && x.sn);
+  document.getElementById('list').innerHTML = rows.length ? rows.map(x => {
+    const gap = mine && x.r !== ME && x.sn && x.fresh ? x.sn.km - mine.sn.km : null;
+    const gapTxt = gap == null ? '' : ` · ${gap >= 0 ? '在我前面' : '在我後面'} ${Math.abs(gap).toFixed(1)} K`;
+    return `<div class="row${x.r === ME ? ' me' : ''}${x.fresh ? '' : ' old'}" style="--c:${x.c}" data-r="${x.r}">
+      <img src="icons/runner${x.r}.png" alt="">
+      <div class="n"><b>${name(x.r)}</b><div>${ago(x.p.t)}${x.pc ? ' · ' + x.pc : ''}${x.p.batt != null ? ` · 🔋${x.p.batt}%` : ''}${gapTxt}</div></div>
+      <div class="km">${x.sn ? x.sn.km.toFixed(1) + '<small> K</small>' : '<small>不在賽道上</small>'}</div></div>`;
+  }).join('') : `<div class="empty">還沒有隊友回報位置。<br>打開 OwnTracks（跟 CRUFU app 同一個設定）就會出現，約 1 分鐘內。</div>`;
+}
+document.getElementById('list').addEventListener('click', e => {
+  const row = e.target.closest('.row'), a = row && loc[row.dataset.r], p = a && a[a.length - 1];
+  if (p) map.setView([p.lat, p.lon], 16);
+});
+document.getElementById('b-fit').onclick = fit;
+document.getElementById('b-sat').onclick = () => { sat = !sat; setBase(); };
+document.getElementById('b-me').onclick = () => {
+  const a = ME && loc[String(ME)], p = a && a[a.length - 1];
+  if (p) return map.setView([p.lat, p.lon], 16);
+  navigator.geolocation && navigator.geolocation.getCurrentPosition(q => map.setView([q.coords.latitude, q.coords.longitude], 16));
+};
+
+if (!KEY) {
+  document.getElementById('list').innerHTML = '<div class="nokey">這個頁面要用隊友連結打開（網址後面有 #k=…）。請跟隊長要連結。</div>';
+} else {
+  sync();
+  setInterval(sync, 20e3);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
+}
+</script>
+</body>
+</html>
