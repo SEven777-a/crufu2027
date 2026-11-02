@@ -247,7 +247,6 @@ function pushCard(setup) {
     : tips('這個瀏覽器不支援通知', ['Android 請用 Chrome 打開', 'iPhone 請用 Safari 打開', 'iPhone 要 iOS 16.4 以上']);
   return `<div class="card">${body}
     ${tips('什麼時候會通知', ['跑者剩 500 公尺', '自動交棒完成', '跑者停留超過 3 分鐘', '收不到跑者位置', '手機鎖螢幕也收得到', '自己跑時只收剩 500 公尺和交棒'])}
-    ${tips('用 Garmin 手錶看通知', ['Garmin Connect 開啟智慧通知', '運動中也要打開', '手機通知預覽選永遠'])}
     ${tips('用耳機聽通知', isIOS
       ? ['設定的通知裡打開朗讀通知', '清單中打開 CRUFU', '只支援 AirPods 和部分 Beats', '沒戴耳機時不會唸']
       : ['Google 助理設定打開朗讀通知', '各品牌位置不同', '沒戴耳機時不會唸'])}</div>`;
