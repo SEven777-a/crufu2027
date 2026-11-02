@@ -480,23 +480,15 @@ function schedule(now, st) {
 }
 
 // 進行中那棒：推估完成比例與所在公里數（之後有 GPS 就改用實際位置）
-// 進度條上放跑者頭像，頭像跟著進度往前移
-const avBar = (frac, r) => { const w = Math.min(100, Math.max(0, frac * 100)).toFixed(1);
-  return `<div class="av-bar"><div class="bar"><i style="width:${w}%"></i></div><img src="${ICONS.runner(r)}" alt="" style="left:${w}%"></div>`; };
-// 全隊總進度：一條進度條上放兩台車。跑步中那台在跑者位置；另一台在它下一段的起點（要去那裡等），沒有下一段就停在最後交棒點
+// 進度條：圖示站在條上，跟著進度往前移。個人用奔跑小人，全隊用一台車（跑步中那棒所屬的車）
+const pctW = f => Math.min(100, Math.max(0, f * 100)).toFixed(1);
+const figBar = (frac, src, cls) => `<div class="fig-bar ${cls}"><div class="bar"><i style="width:${pctW(frac)}%"></i></div><img src="${src}" alt="" style="left:${pctW(frac)}%"></div>`;
+const avBar = (frac, r) => figBar(frac, `icons/run${r}.png`, 'runner');
 function carsBar(sch, now) {
-  const run = sch.find(s => s.status === 'run');
-  const kmNow = run ? run.L.startKm + run.L.km * progressOf(run, now).frac : Math.max(0, ...sch.filter(s => s.status === 'done').map(s => s.L.endKm));
-  const pct = km => Math.min(100, Math.max(0, km / D.totalKm * 100)).toFixed(1);
-  const carKm = c => {
-    if (run && run.car === c) return kmNow;
-    const nx = sch.find(s => s.car === c && s.status === 'todo');
-    if (nx) return nx.L.startKm;
-    const done = sch.filter(s => s.car === c && s.status === 'done');
-    return done.length ? done[done.length - 1].L.endKm : 0;
-  };
-  return `<div class="av-bar car-bar"><div class="bar"><i style="width:${pct(kmNow)}%"></i></div>
-    ${[1, 2].map(c => `<img src="${ICONS['car' + c]}" alt="Car${c}" class="${run && run.car === c ? 'on' : ''}" style="left:${pct(carKm(c))}%;border-color:var(--car${c})">`).join('')}</div>`;
+  const run = sch.find(s => s.status === 'run'), next = sch.find(s => s.status === 'todo');
+  const km = run ? run.L.startKm + run.L.km * progressOf(run, now).frac : Math.max(0, ...sch.filter(s => s.status === 'done').map(s => s.L.endKm));
+  const car = (run || next || sch[sch.length - 1]).car;
+  return figBar(km / D.totalKm, `icons/car${car}-cut.png`, 'car');
 }
 function progressOf(s, now) {
   const g = gpsOf(s, now);
