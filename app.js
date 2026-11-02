@@ -25,7 +25,7 @@ const LEVEL_COLOR = { 低: '#22c55e', 中: '#f59e0b', 難: '#ef4444' };
 const CAR_COLOR = { 1: '#e5484d', 2: '#3b82f6' };
 // 頭像圖組：每組兩張 icons/runner<id>.png（大頭）＋ icons/run<id>.png（奔跑小人）；原始大圖在專案的 icons_src/
 // 新增圖組時把號碼加進 AVATAR_IDS。每個人在設定裡自己選，沒選的用跟號碼同號的那組
-const AVATAR_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const AVATAR_IDS = Array.from({ length: 30 }, (_, i) => i + 1);   // 1–10 原始組、11–30 第二批（build_avatars.py 產生）
 const avatarOf = r => (cfg.avatars && cfg.avatars[r]) || r;
 const ICONS = { runner: r => `icons/runner${avatarOf(r)}.png`, run: r => `icons/run${avatarOf(r)}.png`, car1: 'icons/car1.png', car2: 'icons/car2.png' };
 // 模擬模式（網址加 ?sim，sim.js 提供假資料）的存檔加 sim. 前綴，不會蓋掉正式的設定與隊伍密碼
