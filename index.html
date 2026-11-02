@@ -198,7 +198,12 @@ a.btn { text-decoration: none; }
 .shift.done { opacity: .5; }
 .shift .t { font-size: 13px; color: var(--muted); margin: 4px 0 0 32px; }
 .shift .t b { color: var(--text); }
-.order-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(5, auto); grid-auto-flow: column; gap: 8px; }
+.order-grid { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(6, auto); grid-auto-flow: column; gap: 8px; }
+/* 棒次順序：左欄 Car1、右欄 Car2，欄頭與每格左邊框用車色區分 */
+.order-grid .car-head { color: #fff; font-weight: 700; font-size: 14px; text-align: center; border-radius: 10px; padding: 6px; }
+.order-grid .car-head.car1 { background: var(--car1); grid-column: 1; grid-row: 1; }
+.order-grid .car-head.car2 { background: var(--car2); grid-column: 2; grid-row: 1; }
+.order-grid label.car1 { border-left: 4px solid var(--car1); } .order-grid label.car2 { border-left: 4px solid var(--car2); }
 .order-grid label, .member-list label { display: flex; align-items: center; gap: 8px; background: var(--card); border-radius: 10px; padding: 6px 8px; }
 .order-grid select { flex: 1; min-width: 0; }
 .member-list { display: grid; gap: 8px; }
@@ -243,6 +248,6 @@ select option:disabled { color: #666; }
 <script src="data.js?v=8"></script>
 <!-- 網址加 ?sim 進入模擬模式（假的 10 人比賽，不連真的資料庫） -->
 <script>if (/[?&]sim\b/.test(location.search)) document.write('<script src="sim.js?v=3"><\/script>');</script>
-<script src="app.js?v=27"></script>
+<script src="app.js?v=29"></script>
 </body>
 </html>

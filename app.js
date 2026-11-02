@@ -231,27 +231,26 @@ async function testPush() {
   const j = await r.json().catch(() => ({}));
   if (!r.ok || !j.ok) throw new Error(j.error || `送出失敗（${j.status || r.status}）`);
 }
+// 通知說明：條列，每項 20 字內
+const tips = (title, items) => `<div class="muted" style="font-size:13px;padding-top:8px"><b>${title}</b>
+  <ul style="margin:4px 0 0;padding-left:20px;line-height:1.7">${items.map(t => `<li>${t}</li>`).join('')}</ul></div>`;
 function pushCard(setup) {
   const st = push.state;
   const body = st === 'on' && setup ? `<div>✅ 通知已開啟</div>
-      <div style="font-size:14px;line-height:1.7;margin-top:6px">最後確認一下收不收得到：按下面這顆，<b>馬上鎖螢幕</b>，幾秒內鎖定畫面會跳出「🔔 測試通知」就代表成功。</div>
       <button class="btn" data-act="push-test" style="margin-top:10px">傳測試通知給自己</button>
-      <div class="muted" style="font-size:12px;margin-top:6px">沒收到？到手機設定確認這個 app（iPhone 是 CRUFU、Android 是 Chrome）的通知是開的，再試一次。</div>`
+      ${tips('測試方法', ['按下按鈕後馬上鎖螢幕', '幾秒內跳出測試通知就成功', '沒收到請到手機設定開啟通知'])}`
     : st === 'on' ? `<div class="kv"><span>✅ 已開啟</span><span><button class="chip plain" data-act="push-test">傳測試通知</button> <button class="chip plain" data-act="push-off">關閉</button></span></div>`
     : st === 'off' ? `<button class="btn" data-act="push-on">開啟通知</button>`
-    : st === 'denied' ? `<div class="muted" style="font-size:13px">通知被封鎖了。到手機的<b>設定 → 通知</b>（Android 是 Chrome 的網站設定）把這個網站改成允許，再回來重新整理。</div>`
-    : st === 'need-install' ? `<div style="font-size:13px;line-height:1.7">iPhone 要先把 app 加到主畫面才能收通知：<br>
-        1. 按 Safari 下方的<b>分享</b>按鈕（方框加箭頭）<br>2. 選<b>「加入主畫面」</b>→ 新增<br>
-        3. 回到主畫面，點 <b>CRUFU</b> 圖示打開，再到這裡按「開啟通知」<br><span class="muted">需要 iOS 16.4 以上</span></div>`
+    : st === 'denied' ? tips('通知被封鎖', isIOS ? ['到手機設定的通知', '把 CRUFU 改成允許', '回來重新整理'] : ['到 Chrome 網站設定', '把這個網站改成允許通知', '回來重新整理'])
+    : st === 'need-install' ? tips('iPhone 要先加入主畫面', ['按 Safari 下方分享按鈕', '選加入主畫面', '從主畫面 CRUFU 圖示打開', '再回來按開啟通知', '需要 iOS 16.4 以上'])
     : st === 'checking' ? '<div class="muted">檢查中…</div>'
-    : `<div class="muted" style="font-size:13px">這個瀏覽器不支援通知。Android 請用 <b>Chrome</b> 打開；iPhone 請用 <b>Safari</b> 並更新到 iOS 16.4 以上。</div>`;
-  return `<div class="card">${body}<div class="muted" style="font-size:12px;padding-top:8px">跑者剩 500 m、自動交棒、跑者停留 3 分鐘、收不到跑者位置時會通知；手機鎖屏也收得到。
-    輪到你跑時，只會收到「剩 500 公尺」和「交棒完成」兩則。</div>
-    <div class="muted" style="font-size:12px;padding-top:6px">⌚ 跑步時用手錶看（實測 Garmin 可以）：Garmin Connect → 你的手錶 → <b>通知與提醒 → 智慧通知</b>，「運動中」打開；
-      手機的 CRUFU 通知要允許顯示在鎖定畫面、預覽選「永遠」。手錶會震動並顯示內容。</div>
-    <div class="muted" style="font-size:12px;padding-top:6px">🎧 跑步時想用聽的：戴藍牙耳機，${isIOS
-      ? 'iPhone <b>設定 → 通知 → 朗讀通知</b> 打開，下面清單打開 <b>CRUFU</b>（只支援 AirPods 和部分 Beats，其他耳機只會「叮」一聲）'
-      : '在 <b>Google 助理設定 → 通知</b> 打開「朗讀通知」（各品牌位置不同）'}。沒戴耳機時不會唸，所以平常不會吵。</div></div>`;
+    : tips('這個瀏覽器不支援通知', ['Android 請用 Chrome 打開', 'iPhone 請用 Safari 打開', 'iPhone 要 iOS 16.4 以上']);
+  return `<div class="card">${body}
+    ${tips('什麼時候會通知', ['跑者剩 500 公尺', '自動交棒完成', '跑者停留超過 3 分鐘', '收不到跑者位置', '手機鎖螢幕也收得到', '自己跑時只收剩 500 公尺和交棒'])}
+    ${tips('用 Garmin 手錶看通知', ['Garmin Connect 開啟智慧通知', '運動中也要打開', '手機通知預覽選永遠'])}
+    ${tips('用耳機聽通知', isIOS
+      ? ['設定的通知裡打開朗讀通知', '清單中打開 CRUFU', '只支援 AirPods 和部分 Beats', '沒戴耳機時不會唸']
+      : ['Google 助理設定打開朗讀通知', '各品牌位置不同', '沒戴耳機時不會唸'])}</div>`;
 }
 
 // ---------- 新手設定：我是誰 → OwnTracks 定位 → 通知 ----------
@@ -1037,7 +1036,7 @@ function openSettings() {
     </div>
     <div class="row"><h2>棒次順序</h2><button class="chip plain" data-act="rules">📘 換棒規則</button></div>
     <p class="muted" style="font-size:13px;margin-top:0">每輪 10 棒照這個順序跑，第 2、3 輪相同。<b>左欄坐 Car1、右欄坐 Car2</b>。選到已經排在別棒的人，兩人會自動對調。比賽開始後再改，只影響還沒跑的棒次。</p>
-    <div class="order-grid">${cfg.order.map((r, i) => `<label><span class="badge sm car${i < 5 ? 1 : 2}">${i + 1}</span>
+    <div class="order-grid"><div class="car-head car1">🚐 Car1</div><div class="car-head car2">🚐 Car2</div>${cfg.order.map((r, i) => `<label class="car${i < 5 ? 1 : 2}"><span class="badge sm car${i < 5 ? 1 : 2}">${i + 1}</span>
       <select data-act="set-order" data-i="${i}">${RUNNERS.map(x => `<option value="${x}" ${x === r ? 'selected' : ''}>${runnerName(x)}</option>`).join('')}</select></label>`).join('')}</div>
     ${Object.keys(cfg.assign).length ? `<div class="card" style="margin-top:8px"><div class="kv"><span style="font-size:13px">另有個別調整：第 ${Object.keys(cfg.assign).sort((a, b) => a - b).join('、')} 棒</span>
       <button class="chip plain" data-act="clear-assign">全部清除</button></div></div>` : ''}
