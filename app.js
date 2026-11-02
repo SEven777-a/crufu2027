@@ -1043,7 +1043,7 @@ function openSettings() {
       <button class="chip plain" data-act="clear-assign">全部清除</button></div></div>` : ''}
     <h2>隊員名字與平地配速（分:秒／公里）</h2>
     <div class="member-list">${RUNNERS.map(r => `<label><span class="muted num">${r}</span>
-      <input data-act="set-name" data-r="${r}" value="${esc(cfg.names[r] || '')}" placeholder="${r} 號" maxlength="8">
+      <input data-act="set-name" data-r="${r}" value="${esc(cfg.names[r] || '')}" placeholder="${r} 號" maxlength="12">
       <input data-act="set-pace" data-r="${r}" value="${fmtPace(cfg.paces[r]).replace("'", ':').replace('"', '')}" inputmode="numeric" class="pace"></label>`).join('')}</div>
     ${sync.key ? `<h2>通知</h2>${pushCard()}` : ''}
     <h2>示範模式</h2>
