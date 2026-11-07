@@ -57,6 +57,22 @@ header .st { font-size: 12px; color: var(--muted); }
 .row .pb { height: 4px; background: var(--line); border-radius: 2px; margin-top: 5px; overflow: hidden; }
 .row .pb i { display: block; height: 100%; background: var(--c); }
 .nokey { padding: 24px 16px; line-height: 1.7; }
+/* 我的計時卡：開始 → 計時＋進度 → 完賽 */
+#run { margin: 0 12px 8px; padding: 12px 14px; border-radius: 16px; background: var(--card); }
+#run.on { background: linear-gradient(135deg, #14532d, #1e3a8a); }
+#run.done { background: linear-gradient(135deg, #713f12, #7c2d12); }
+#run .lab { font-size: 12px; color: #cbd5e1; display: flex; justify-content: space-between; gap: 8px; }
+#run .big { font-size: 44px; font-weight: 800; line-height: 1.1; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
+#run .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
+#run .grid div { font-size: 11px; color: #cbd5e1; }
+#run .grid b { display: block; font-size: 18px; color: #fff; font-variant-numeric: tabular-nums; }
+#run .bar { height: 8px; background: rgba(255,255,255,.2); border-radius: 4px; overflow: hidden; margin-top: 8px; }
+#run .bar i { display: block; height: 100%; background: #4ade80; transition: width .8s; }
+#run .btns { display: flex; gap: 8px; margin-top: 10px; }
+#run button { flex: 1; padding: 12px; border: 0; border-radius: 12px; font-size: 16px; font-weight: 700; font-family: inherit; background: var(--accent); color: #052e16; }
+#run button.ghost { flex: 0 0 auto; background: rgba(255,255,255,.15); color: #fff; font-weight: 400; font-size: 14px; }
+#run select { font-size: 15px; padding: 6px 8px; border-radius: 8px; font-family: inherit; }
+#run .note { font-size: 12px; color: #cbd5e1; margin-top: 6px; }
 </style>
 <style>html, body { touch-action: pan-x pan-y; }</style>
 <script>
@@ -66,6 +82,7 @@ document.addEventListener('gesturestart', e => { if (!e.target.closest || !e.tar
 </head>
 <body>
 <header><h1>🌾 田中馬 隊友位置</h1><span class="st" id="st">連線中…</span></header>
+<div id="run"></div>
 <div id="map" style="position:relative"><div class="tools">
   <button id="b-fit">全路線</button><button id="b-me">我</button><button id="b-sat">衛星</button></div></div>
 <div id="prog"></div>
@@ -89,7 +106,17 @@ if (h.get('k')) lsSet('crufu.key.v1', h.get('k'));
 const KEY = h.get('k') || lsGet('crufu.key.v1');
 let ME = 0;
 try { ME = +(JSON.parse(localStorage.getItem('crufu.cfg.v1')) || {}).me || 0; } catch (e) { ME = 0; }
+if (+lsGet('tz.me.v1')) ME = +lsGet('tz.me.v1');
 if (/^(10|[1-9])$/.test(h.get('me') || '')) ME = +h.get('me');
+
+// 我的計時：{ start, end }（毫秒），只存在這支手機
+let RUN = {};
+try { RUN = JSON.parse(localStorage.getItem('tz.run.v1')) || {}; } catch (e) { RUN = {}; }
+const saveRun = () => lsSet('tz.run.v1', JSON.stringify(RUN));
+const fmtDur = ms => { const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
+const fmtClock = t => new Date(t).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
+const fmtPace = secPerKm => { const s = Math.round(secPerKm); return `${Math.floor(s / 60)}'${String(s % 60).padStart(2, '0')}"`; };
 
 const map = L.map('map', { zoomControl: false, attributionControl: false });
 let base, sat = false;
@@ -205,13 +232,100 @@ function render() {
     ${on.slice().reverse().map(x => `<div class="av${x.r === ME ? ' me' : ''}" style="left:${pct(x.sn.km)}%;--c:${x.c}" data-r="${x.r}"><img src="${avatarSrc(x.r)}" alt=""></div>`).join('')}</div>`;
   document.getElementById('list').innerHTML = rows.length ? rows.map(x => {
     const gap = mine && x.r !== ME && x.sn && x.fresh ? x.sn.km - mine.sn.km : null;
-    const gapTxt = gap == null ? '' : ` · ${gap >= 0 ? '在我前面' : '在我後面'} ${Math.abs(gap).toFixed(1)} K`;
+    let gapTxt = gap == null ? '' : ` · ${gap >= 0 ? '在我前面' : '在我後面'} ${Math.abs(gap).toFixed(1)} K`;
+    // 用我按的開始時間當大家的起跑時間，估隊友幾點到終點
+    if (RUN.start && x.r !== ME && x.fresh && x.sn && x.sn.km > 1 && x.p.t > RUN.start) {
+      gapTxt += x.sn.km >= D.totalKm - 0.1 ? ' · 已到終點'
+        : ` · 預估 ${fmtClock(RUN.start + (x.p.t - RUN.start) * D.totalKm / x.sn.km)} 完賽`;
+    }
     return `<div class="row${x.r === ME ? ' me' : ''}${x.fresh ? '' : ' old'}" style="--c:${x.c}" data-r="${x.r}">
       <img src="${avatarSrc(x.r)}" alt="">
       <div class="n"><b>${name(x.r)}</b>${x.sn ? ` <small style="color:var(--muted)">${Math.round(x.sn.km / D.totalKm * 100)}%</small>` : ''}<div>${ago(x.p.t)}${x.pc ? ' · ' + x.pc : ''}${x.p.batt != null ? ` · 🔋${x.p.batt}%` : ''}${gapTxt}</div>${x.sn ? `<div class="pb"><i style="width:${Math.min(100, x.sn.km / D.totalKm * 100).toFixed(1)}%"></i></div>` : ''}</div>
       <div class="km">${x.sn ? x.sn.km.toFixed(1) + '<small> K</small>' : '<small>不在賽道上</small>'}</div></div>`;
   }).join('') : `<div class="empty">還沒有隊友回報位置。<br>打開 OwnTracks（跟 CRUFU app 同一個設定）就會出現，約 1 分鐘內。</div>`;
+  renderRun();
 }
+
+// ── 我的計時卡 ──
+function myKm() {
+  const k = ME && lastKm[ME];
+  return k && k.km != null && RUN.start && k.t >= RUN.start ? k : null;
+}
+function renderRun() {
+  const el = document.getElementById('run'), now = Date.now();
+  const who = ME ? '' : `<div class="note">我是 <select data-act="me"><option value="">選號碼</option>${
+    Array.from({ length: 10 }, (_, i) => `<option value="${i + 1}">${i + 1} 號 ${names[i + 1] ? esc(names[i + 1]) : ''}</option>`).join('')}</select>（選了才算得出我的公里數）</div>`;
+  if (!RUN.start) {
+    el.className = '';
+    el.innerHTML = `<div class="lab"><span>${ME ? name(ME) : '我'} · 還沒開始</span><span>半馬 ${D.totalKm.toFixed(1)} K</span></div>
+      <div class="big">0:00:00</div>${who}
+      <div class="btns"><button data-act="start">▶ 開始計時（槍響時按）</button></div>`;
+    return;
+  }
+  const k = myKm();
+  // 跑到終點附近自動停錶（用那筆定位的時間）
+  if (!RUN.end && k && k.km >= D.totalKm - 0.1) { RUN.end = k.t; saveRun(); }
+  const end = RUN.end || now, el0 = end - RUN.start;
+  const km = RUN.end && k && k.km >= D.totalKm - 0.1 ? D.totalKm : (k ? k.km : 0);
+  const pct = Math.min(100, km / D.totalKm * 100);
+  const run = k && k.km > 0.3 ? (k.t - RUN.start) / 1000 / k.km : 0;   // 平均配速（秒/公里），用定位那一刻算
+  const projMs = run ? run * D.totalKm * 1000 : 0;
+  el.className = RUN.end ? 'done' : 'on';
+  el.innerHTML = `<div class="lab"><span>${RUN.end ? '🎉 完賽' : `${ME ? name(ME) : '我'} · 計時中`}</span><span>${fmtClock(RUN.start)} 出發${RUN.end ? ` · ${fmtClock(RUN.end)} 抵達` : ''}</span></div>
+    <div class="big" data-el>${fmtDur(el0)}</div>
+    <div class="grid">
+      <div>已跑<b>${km.toFixed(2)}<small style="font-size:12px"> / ${D.totalKm.toFixed(1)} K</small></b></div>
+      <div>平均配速<b>${run ? fmtPace(run) : '—'}</b></div>
+      <div>${RUN.end ? '剩餘' : '預估完賽'}<b>${RUN.end ? '0 K' : projMs ? fmtDur(projMs) : '—'}</b></div>
+    </div>
+    <div class="bar"><i style="width:${pct.toFixed(1)}%"></i></div>
+    ${who}${ME && !k && !RUN.end ? '<div class="note">等第一筆定位（手機 GPS 或 OwnTracks）…</div>' : ''}
+    ${k && !RUN.end ? `<div class="note">${Math.round(pct)}% · 剩 ${(D.totalKm - km).toFixed(1)} K${projMs ? ` · 約 ${fmtClock(RUN.start + projMs)} 到終點` : ''} · 定位 ${ago(k.t)}</div>` : ''}
+    <div class="btns">${RUN.end ? '<button class="ghost" data-act="resume">繼續計時</button>' : '<button data-act="finish">■ 完賽停錶</button>'}<button class="ghost" data-act="reset">重設</button></div>`;
+}
+// 每秒只更新碼錶數字
+setInterval(() => {
+  const b = document.querySelector('#run [data-el]');
+  if (b && RUN.start && !RUN.end) b.textContent = fmtDur(Date.now() - RUN.start);
+}, 1000);
+
+// 計時中、頁面開著時，用這支手機的 GPS 補即時位置（只在本機算，不上傳；關螢幕就停，靠 OwnTracks）
+let watchId = null, lastDraw = 0;
+function updateWatch() {
+  const want = RUN.start && !RUN.end && ME && !document.hidden && navigator.geolocation;
+  if (want && watchId == null) {
+    watchId = navigator.geolocation.watchPosition(q => {
+      if (q.coords.accuracy > 50) return;   // 太不準的點不要
+      addLoc({ person: String(ME), recorded_at: new Date(q.timestamp).toISOString(), lat: q.coords.latitude, lon: q.coords.longitude, batt: null });
+      if (Date.now() - lastDraw > 5000) { lastDraw = Date.now(); render(); }
+    }, () => { /* 沒給權限就只靠 OwnTracks */ }, { enableHighAccuracy: true, maximumAge: 5000 });
+  } else if (!want && watchId != null) {
+    navigator.geolocation.clearWatch(watchId); watchId = null;
+  }
+}
+document.getElementById('run').addEventListener('click', e => {
+  const act = e.target.closest('button') && e.target.closest('button').dataset.act;
+  if (act === 'start') {
+    RUN = { start: Date.now() };
+    if (ME) lastKm[ME] = { km: 0, t: RUN.start };   // 從起點重新對公里數
+  } else if (act === 'finish') {
+    if (!confirm('確定停錶？')) return;
+    RUN.end = Date.now();
+  } else if (act === 'resume') {
+    delete RUN.end;
+  } else if (act === 'reset') {
+    if (!confirm('清除這次計時？')) return;
+    RUN = {};
+  } else return;
+  saveRun(); updateWatch(); render();
+});
+document.getElementById('run').addEventListener('change', e => {
+  if (e.target.dataset.act !== 'me' || !e.target.value) return;
+  ME = +e.target.value; lsSet('tz.me.v1', String(ME));
+  if (RUN.start && !(lastKm[ME] && lastKm[ME].t >= RUN.start)) lastKm[ME] = { km: 0, t: RUN.start };
+  updateWatch(); render();
+});
+document.addEventListener('visibilitychange', updateWatch);
 const jump = e => {
   const row = e.target.closest('[data-r]'), a = row && loc[row.dataset.r], p = a && a[a.length - 1];
   if (p) map.setView([p.lat, p.lon], 16);
@@ -226,6 +340,7 @@ document.getElementById('b-me').onclick = () => {
   navigator.geolocation && navigator.geolocation.getCurrentPosition(q => map.setView([q.coords.latitude, q.coords.longitude], 16));
 };
 
+renderRun(); updateWatch();
 if (!KEY) {
   document.getElementById('list').innerHTML = '<div class="nokey">這個頁面要用隊友連結打開（網址後面有 #k=…）。請跟隊長要連結。</div>';
 } else {
