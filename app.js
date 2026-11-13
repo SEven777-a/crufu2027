@@ -620,6 +620,9 @@ function chips(s) {
     + (L.tunnel ? ' <span class="chip plain">隧道</span>' : '')
     + (L.n > 1 && L.n % 5 === 1 ? ' <span class="chip plain">換車</span>' : '');
 }
+// 地點一律用大會的接力區編號：第 n 棒從第 n-1 接力區（第 1 棒是起點）跑到第 n 接力區（第 30 區＝終點）
+const relayName = k => k <= 0 ? '起點' : k >= 30 ? '第 30 接力區（終點七星潭）' : `第 ${k} 接力區`;
+const legRange = L => `${relayName(L.n - 1)} → ${relayName(L.n)}`;
 // 大會我的地圖上「本棒終點接力區」的說明（停車、腹地、自行車道等）
 function relayNote(L) {
   return L.relayNote ? `<div style="font-size:13px;margin-top:6px">📍 第 ${L.n} 接力區：${esc(L.relayNote)}</div>` : '';
@@ -702,6 +705,7 @@ function renderMe(now, sch) {
   const legCard = focus ? `<div class="card">
       <div class="row"><b>第 ${focus.n} 棒</b><span>${chips(focus)}</span></div>
       <div class="muted" style="font-size:14px;margin-top:6px">${esc(focus.L.reason)}</div>
+      <div style="font-size:13px;margin-top:6px">${legRange(focus.L)}</div>
       ${relayNote(focus.L)}
       <div class="stats">
         <div class="stat"><b>${focus.L.km.toFixed(2)}</b><span>公里</span></div>
@@ -740,7 +744,7 @@ function carTaskCard(sch) {
     const nx = sch[run.n];                       // 下一棒（可能換車或已是終點）
     status = `本車跑步中 · 第 ${run.n} 棒 ${runnerName(run.runner)}`;
     dest = run.L.end;
-    destName = !nx ? '終點七星潭' : nx.car === car ? `第 ${nx.n} 棒起點` : `第 ${run.n} 棒終點`;
+    destName = relayName(run.n);
     const back = sch[run.n + 5];                 // 換車後，本車下一段的第一棒
     rows = `<div class="kv"><span>下一個交接點</span><span>${destName}</span></div>
       <div class="kv"><span>預計抵達</span><span class="num">${fmtT(run.end)}（剩 <span data-countdown="${run.end}">${fmtCountdown((run.end - nowMs()) / 1000)}</span>）</span></div>`
@@ -750,7 +754,7 @@ function carTaskCard(sch) {
   } else {
     status = run ? `本車空檔中 · Car${other} 在跑` : '尚未開跑';
     dest = nextMine.L.start;
-    destName = `第 ${nextMine.n} 棒起點`;
+    destName = relayName(nextMine.n - 1);
     rows = `<div class="kv"><span>下一個任務</span><span>${destName} · ${runnerName(nextMine.runner)} 起跑</span></div>
       <div class="kv"><span>預計起跑</span><span class="num">${fmtDT(nextMine.start)}</span></div>
       <div class="kv"><span>剩餘</span><span class="num"><b data-countdown="${nextMine.start}">${fmtCountdown((nextMine.start - nowMs()) / 1000)}</b></span></div>`;
@@ -770,7 +774,7 @@ function legRow(s, now) {
     <div class="badge car${s.car}">${s.n}</div>
     <div class="mid"><div><b>${runnerName(s.runner)}</b> ${chips(s)}</div><div class="t">${s.L.km.toFixed(1)} km · +${s.L.gain}/−${s.L.loss} m</div></div>
     <div class="right">${right}</div>
-    ${s.status === 'done' ? '' : `<a class="nav-mini" href="${navUrl(s.L.start)}" target="_blank" rel="noopener" aria-label="導航到第 ${s.n} 棒起點">${NAV_ICON}</a>`}</div>`;
+    ${s.status === 'done' ? '' : `<a class="nav-mini" href="${navUrl(s.L.start)}" target="_blank" rel="noopener" aria-label="導航到${relayName(s.n - 1)}">${NAV_ICON}</a>`}</div>`;
 }
 // 兩車輪班與空檔
 function shiftCard(sch) {
@@ -779,7 +783,7 @@ function shiftCard(sch) {
     const after = k.next ? `之後空檔 <b>${fmtLong(k.idle / 1000)}</b>` : '本車最後一段，結束後前往終點';
     // 下一個換車地點＝本車下一段第一棒的起點（最後一段就是終點）
     const dest = k.next ? k.next.L.start : D.legs[29].end;
-    const nav = k.status === 'done' ? '' : `<a class="nav-mini" href="${navUrl(dest)}" target="_blank" rel="noopener" aria-label="導航到${k.next ? `第 ${k.next.n} 棒起點` : '終點'}">${NAV_ICON}</a>`;
+    const nav = k.status === 'done' ? '' : `<a class="nav-mini" href="${navUrl(dest)}" target="_blank" rel="noopener" aria-label="導航到${k.next ? relayName(k.next.n - 1) : '終點'}">${NAV_ICON}</a>`;
     return `<div class="shift ${k.status}"><div class="row"><span><span class="badge sm car${k.car}">C${k.car}</span>
       第 ${k.legs[0].n}–${k.legs[4].n} 棒${tag}</span><span class="num">${fmtT(k.start)}–${fmtT(k.end)}</span></div>
       <div class="row"><span class="t">${after}</span>${nav}</div></div>`;
@@ -862,12 +866,12 @@ function initMap() {
     legPts.push(pts);
     legLines.push(L.polyline(pts, { color: LEVEL_COLOR[Lg.level], weight: 6, opacity: 0.95 }).addTo(map)
       .on('click', () => openLeg(Lg.n)));
-    // 換車點（第 1、6、11…26 棒起點）一直顯示，其他棒放大才顯示
+    // 標記寫大會接力區編號（第 n 棒起點＝第 n-1 接力區）；起點與汽車接力點一直顯示，其他放大才顯示
     const major = Lg.n % 5 === 1;
-    const pin = L.marker(Lg.start, { icon: pinIcon(Lg.n, pinKind(Lg.n)), zIndexOffset: major ? 500 : 0 }).on('click', () => openLeg(Lg.n));
+    const pin = L.marker(Lg.start, { icon: pinIcon(Lg.n === 1 ? '起' : Lg.n - 1, pinKind(Lg.n)), zIndexOffset: major ? 500 : 0 }).on('click', () => openLeg(Lg.n));
     if (major) pin.addTo(map); else minorPins.push(pin);
   }
-  L.marker(D.legs[29].end, { icon: pinIcon('終', 'finish'), zIndexOffset: 500 }).addTo(map);
+  L.marker(D.legs[29].end, { icon: pinIcon('30 終', 'finish'), zIndexOffset: 500 }).addTo(map);
   // 圖例（左下角）：標記顏色＝接力區類型，線段顏色＝難度
   const legend = L.control({ position: 'bottomleft' });
   legend.onAdd = () => {
@@ -1040,6 +1044,7 @@ function renderLegSheet() {
   else if (isLastDone) actions = `<button class="btn warn" data-act="undo" data-n="${s.n}">取消這棒的完成紀錄</button>`;
   openSheet(`<div class="sheet-head"><h3>第 ${s.n} 棒 <span class="muted" style="font-size:14px">· ${statusText}</span></h3><button data-act="close">完成</button></div>
     <div style="margin:6px 0 10px">${chips(s)}</div>
+    <div style="font-size:14px;margin-bottom:6px"><b>${legRange(s.L)}</b></div>
     <div class="muted" style="font-size:14px">${esc(s.L.reason)}</div>
     ${relayNote(s.L)}
     <div class="stats">
@@ -1050,8 +1055,8 @@ function renderLegSheet() {
     ${nightBox(s)}
     <div style="margin-top:12px">${elevSvg(s.L.startKm, s.L.endKm)}</div>
     <div class="btn-row">
-      <a class="btn ghost" href="${navUrl(s.L.start)}" target="_blank" rel="noopener">${NAV_ICON} 導航到起點</a>
-      <a class="btn ghost" href="${navUrl(s.L.end)}" target="_blank" rel="noopener">${NAV_ICON} 導航到終點</a>
+      <a class="btn ghost" href="${navUrl(s.L.start)}" target="_blank" rel="noopener">${NAV_ICON} 導航到${relayName(s.n - 1)}</a>
+      <a class="btn ghost" href="${navUrl(s.L.end)}" target="_blank" rel="noopener">${NAV_ICON} 導航到${relayName(s.n)}</a>
     </div>
     <div class="card" style="margin-top:12px">
       ${runnerPicker(s, sch)}
@@ -1059,7 +1064,7 @@ function renderLegSheet() {
       ${actual}
       <div class="kv"><span>平地配速 → 坡度估算</span><span class="num">${fmtPace(cfg.paces[s.runner])} → ${fmtPace((s.dur / 1000 - OVERHEAD_SEC) / s.L.km)}/km</span></div>
     </div>
-    <p class="muted" style="font-size:12px">導航座標是草稿路線的位置，活動手冊公布後會換成正式接力點。</p>
+    <p class="muted" style="font-size:12px">導航座標是大會我的地圖上的接力區位置；接力區編號與大會相同。</p>
     ${actions}`);
 }
 
@@ -1082,7 +1087,7 @@ function openRules() {
       <div class="kv"><b>有人受傷</b><span>點那一棒 → 勾「受傷代跑」才能讓別人多跑；受傷的人之後不能再回來跑</span></div>
       <div class="kv"><b>紅框／黃框</b><span>紅框＝違規，一定要改；黃框＝提醒，看看就好</span></div>
     </div>
-    <p class="muted" style="font-size:13px">⚠ 如果把 Car1 和 Car2 的人對調，兩人那一輪也要<b>互換車子坐</b>，在換車點（第 1、6、11、16、21、26 棒起點）先換好。</p>`);
+    <p class="muted" style="font-size:13px">⚠ 如果把 Car1 和 Car2 的人對調，兩人那一輪也要<b>互換車子坐</b>，在換車點（起點與第 5、10、15、20、25 接力區）先換好。</p>`);
   document.getElementById('sheet').scrollTop = 0;
 }
 
