@@ -21,6 +21,8 @@ self.addEventListener('notificationclick', e => {
     if (!url.startsWith(self.registration.scope)) return self.clients.openWindow(url);
     const list = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     const w = list.find(c => c.url.startsWith(self.registration.scope));
-    return w ? w.focus() : self.clients.openWindow(url);
+    if (!w) return self.clients.openWindow(url);
+    w.postMessage({ url });                    // app 已開著：把網址傳過去（例如 ?ot=run 要跳出切換定位的按鈕）
+    return w.focus();
   })());
 });

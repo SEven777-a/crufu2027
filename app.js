@@ -270,7 +270,7 @@ function pushCard(setup) {
 
 // ---------- 第一次使用設定：我是誰 → OwnTracks 定位 → 通知 ----------
 const OT_STORE = { ios: 'https://apps.apple.com/app/owntracks/id692424691', android: 'https://play.google.com/store/apps/details?id=org.owntracks.android' };
-let otCfg = null, setupShown = false;
+let setupShown = false;
 function myLoc() { const a = cfg.me && sync.loc[String(cfg.me)]; return a && a[a.length - 1]; }
 function openSetup() {
   sheetLeg = null;
@@ -296,6 +296,7 @@ function openSetup() {
     <div>· 開著時隊友看得到你；<b>縮小、關螢幕都沒關係</b>，一樣會回報</div>
     <div>· 不想被看到時，從多工畫面把 OwnTracks 滑掉就下線了</div>
     <div>· <b>比賽當天整場都要開著</b>，跑到一半被關掉，全隊會收到「⚠ 收不到位置」</div>
+    <div>· 定位會<b>自動切換</b>：平常待命（不開 GPS），車到你的起跑交接區才開 GPS，跑到終點自動切回待命，不用按任何東西</div>
     ${ios ? '' : '<div>· Android 建議到 <b>設定 → 應用程式 → OwnTracks → 電池</b> 選「不限制」，免得被省電功能關掉</div>'}
     <div style="margin-top:12px"><b>5. 回到這個畫面，拿著手機走動一下</b>，1～2 分鐘內上面會變成 ✅</div>
     <div class="muted" style="font-size:12px;margin-top:6px">一鍵設定沒反應？<button class="chip plain" data-act="ot-manual">改用手動設定</button></div>
@@ -320,9 +321,68 @@ function refreshSetup() {
   const sh = document.getElementById('sheet'), y = sh.scrollTop;
   openSetup(); sh.scrollTop = y;
 }
-async function getOtCfg() {
-  if (!otCfg || otCfg.deviceId !== String(cfg.me)) otCfg = (await api('otconfig', { person: String(cfg.me) })).config;
-  return otCfg;
+// ---------- OwnTracks 定位模式（省電／跑步） ----------
+// 省電：Significant，坐車、休息時用，幾乎不開 GPS；跑步：Move，GPS 全開。整場只有自己那 3 棒開跑步定位，耗電差好幾倍
+// 平常由伺服器在 OwnTracks 回報的回應裡自動切換（owntracks 函式）；這裡的按鈕是自動切換失靈時的備案
+// 地理圍欄（手機系統原生，幾乎不耗電）：我每棒的起跑交接區 300 m（s＝車到了 → 伺服器切跑步）、終點 100 m（e＝到點 → 切回省電、自動交棒）
+// desc 的格式 owntracks 函式會比對，不要改
+const otCache = {};
+function myWaypoints() {
+  const w = D.legs.filter(L => +runnerOf(L.n) === +cfg.me && L.end).flatMap(L => [
+    { _type: 'waypoint', desc: `CRUFU s${L.n}`, lat: L.start[0], lon: L.start[1], rad: 300, tst: 1800000000 + L.n },
+    { _type: 'waypoint', desc: `CRUFU e${L.n}`, lat: L.end[0], lon: L.end[1], rad: 100, tst: 1800000050 + L.n }]);
+  if (cfg.testPoint) w.push({ _type: 'waypoint', desc: 'CRUFU test', lat: cfg.testPoint.lat, lon: cfg.testPoint.lon, rad: 100, tst: 1800000100 });
+  return w;
+}
+async function getOtCfg(profile = 'save') {
+  const k = cfg.me + ':' + profile;
+  if (!otCache[k]) otCache[k] = (await api('otconfig', { person: String(cfg.me), profile })).config;
+  return { ...otCache[k], waypoints: myWaypoints() };
+}
+const b64 = t => btoa(unescape(encodeURIComponent(t)));   // 中文也能轉 base64
+function openOt(profile) {
+  getOtCfg(profile).then(c => { location.href = 'owntracks:///config?inline=' + encodeURIComponent(b64(JSON.stringify(c))); })
+    .catch(err => toast(err.message));
+}
+// 建議的模式：自己正在跑，或下一棒 20 分鐘內要起跑 → 跑步；其他時間 → 省電
+function otWant(now = nowMs()) {
+  if (!cfg.me) return 'save';
+  const next = schedule(now, raceState(now)).find(s => s.runner === cfg.me && s.status !== 'done');
+  return next && (next.status === 'run' || next.start - now < 20 * 60e3) ? 'run' : 'save';
+}
+const OT_NAME = { run: '🏃 跑步定位', save: '💤 待命定位' };
+function otModeCard(now) {
+  if (!sync.key || cfg.demo || !cfg.me) return '';
+  const want = otWant(now), loc = myLoc();
+  const cur = loc && (loc.mode === '2' ? 'run' : loc.mode === '1' ? 'save' : '');
+  const ok = cur === want;
+  const curText = cur ? `${OT_NAME[cur]}（${agoText(loc.t)}回報）` : loc ? `不明（${agoText(loc.t)}回報）` : '還沒收到位置';
+  return `<div class="card" style="${ok ? '' : 'border:1px solid var(--slow)'}">
+    <div class="row"><b>定位模式</b><span style="font-size:13px">${curText}</span></div>
+    <div class="muted" style="font-size:13px;margin-top:6px">${want === 'run'
+      ? `${ok ? '✅' : '👉'} 建議 <b>${OT_NAME.run}</b>：快輪到你了，位置要準`
+      : `${ok ? '✅' : '👉'} 建議 <b>${OT_NAME.save}</b>：沒在跑時用這個，整場比賽省很多電`}</div>
+    <div class="btn-row">
+      <button class="btn ${want === 'run' ? '' : 'ghost'}" data-act="ot-mode" data-p="run">${OT_NAME.run}</button>
+      <button class="btn ${want === 'save' ? '' : 'ghost'}" data-act="ot-mode" data-p="save">${OT_NAME.save}</button></div>
+    <div class="muted" style="font-size:12px;margin-top:6px">平常會<b>自動切換</b>，不用管。真的沒切到再按：會跳到 OwnTracks 套用${isIOS ? '' : '（要再按右上角「匯入／Import」）'}，再切回這裡</div></div>`;
+}
+// 點通知帶 ?ot=run／save 進來：跳出大按鈕（切到 OwnTracks 必須由人按，不能自動跳）
+function otPrompt(p) {
+  if (!cfg.me || !sync.key) return;
+  const run = p === 'run';
+  openSheet(`<div class="sheet-head"><h3>${OT_NAME[p]}</h3><button data-act="close">稍後</button></div>
+    <p style="line-height:1.7">${run ? '快輪到你跑了。按下面按鈕會跳到 OwnTracks，切成跑步定位（GPS 全開，隊友看得到你即時位置）。'
+      : '你現在沒在跑。切回待命定位，整場比賽可以省下大部分的定位耗電；隊友一樣看得到你大概在哪。'}</p>
+    <button class="btn" data-act="ot-mode" data-p="${p}">${run ? '開啟跑步定位' : '切回待命定位'}</button>
+    ${isIOS ? '' : '<p class="muted" style="font-size:13px">跳到 OwnTracks 後按右上角「匯入／Import」</p>'}`);
+}
+function checkOtParam(search) {
+  const p = new URLSearchParams(search).get('ot');
+  if (p !== 'run' && p !== 'save') return;
+  otPrompt(p);
+  const u = new URL(location.href); u.searchParams.delete('ot');
+  history.replaceState(null, '', u.pathname + u.search + u.hash);
 }
 
 function syncStatus() {
@@ -336,7 +396,7 @@ function syncStatus() {
 const GPS_FRESH = 5 * 60e3;                // 超過 5 分鐘沒回報就改回推估
 function addLoc(r) {
   const a = (sync.loc[r.person] ||= []);
-  a.push({ t: Date.parse(r.recorded_at), lat: r.lat, lon: r.lon, batt: r.batt });
+  a.push({ t: Date.parse(r.recorded_at), lat: r.lat, lon: r.lon, batt: r.batt, mode: r.mode });
   a.sort((x, y) => x.t - y.t);
   const cut = Date.now() - 40 * 60e3;
   while (a.length > 1 && a[0].t < cut) a.shift();
@@ -560,6 +620,10 @@ function chips(s) {
     + (L.tunnel ? ' <span class="chip plain">隧道</span>' : '')
     + (L.n > 1 && L.n % 5 === 1 ? ' <span class="chip plain">換車</span>' : '');
 }
+// 大會我的地圖上「本棒終點接力區」的說明（停車、腹地、自行車道等）
+function relayNote(L) {
+  return L.relayNote ? `<div style="font-size:13px;margin-top:6px">📍 第 ${L.n} 接力區：${esc(L.relayNote)}</div>` : '';
+}
 function elevSvg(a, b) {
   const pts = T.filter(p => p[2] >= a - 1e-6 && p[2] <= b + 1e-6);
   if (pts.length < 2) return '';
@@ -638,6 +702,7 @@ function renderMe(now, sch) {
   const legCard = focus ? `<div class="card">
       <div class="row"><b>第 ${focus.n} 棒</b><span>${chips(focus)}</span></div>
       <div class="muted" style="font-size:14px;margin-top:6px">${esc(focus.L.reason)}</div>
+      ${relayNote(focus.L)}
       <div class="stats">
         <div class="stat"><b>${focus.L.km.toFixed(2)}</b><span>公里</span></div>
         <div class="stat"><b style="color:var(--slow)">+${focus.L.gain}</b><span>爬升 m</span></div>
@@ -655,7 +720,7 @@ function renderMe(now, sch) {
   }).join('');
   el.innerHTML = `${demoBar()}
     <div class="row"><h1>${runnerName(cfg.me)}</h1><button class="chip plain" data-act="settings">⚙ 設定</button></div>
-    ${hero}${carTaskCard(sch)}${legCard}<h2>我的棒次</h2>${list}`;
+    ${hero}${otModeCard(now)}${carTaskCard(sch)}${legCard}<h2>我的棒次</h2>${list}`;
 }
 
 
@@ -835,7 +900,7 @@ function updatePins() {
 // 1) 車上有專用手機（u=car1／car2）且 10 分鐘內有回報 → 用它
 // 2) 否則用這台車上「沒在跑」的隊友推算：10 分鐘內有回報的人裡，找彼此 300 m 內聚最多人的一群，取平均位置
 // 3) 都沒有，專用手機 30 分鐘內有回報也先顯示
-const CAR_FRESH = 10 * 60e3, CREW_RADIUS = 300;
+const CAR_FRESH = 30 * 60e3, CREW_RADIUS = 300;
 const distM = (p, q) => Math.hypot((p.lat - q.lat) * 110540, (p.lon - q.lon) * 111320 * Math.cos(p.lat * Math.PI / 180));
 function carPos(c, now, sch) {
   const a = sync.loc['car' + c], dev = a && a[a.length - 1];
@@ -855,7 +920,7 @@ function carPos(c, now, sch) {
   return null;
 }
 const carMarkers = {};
-// 隊友：地圖按「隊友」後，10 分鐘內有回報的人都用小頭像標在自己的位置（正在跑的人已經有大頭像，不重複；疊在車子圖示上面）
+// 隊友：地圖按「隊友」後，30 分鐘內有回報的人都用小頭像標在自己的位置（正在跑的人已經有大頭像，不重複；疊在車子圖示上面）
 const crewMarkers = {};
 function crewPoints(now, run) {
   if (cfg.demo || !cfg.showCrew) return [];
@@ -963,6 +1028,7 @@ function renderLegSheet() {
   openSheet(`<div class="sheet-head"><h3>第 ${s.n} 棒 <span class="muted" style="font-size:14px">· ${statusText}</span></h3><button data-act="close">完成</button></div>
     <div style="margin:6px 0 10px">${chips(s)}</div>
     <div class="muted" style="font-size:14px">${esc(s.L.reason)}</div>
+    ${relayNote(s.L)}
     <div class="stats">
       <div class="stat"><b>${s.L.km.toFixed(2)}</b><span>公里（${s.L.startKm}–${s.L.endKm}）</span></div>
       <div class="stat"><b style="color:var(--slow)">+${s.L.gain}</b><span>爬升 m</span></div>
@@ -1224,16 +1290,14 @@ document.addEventListener('click', e => {
       break;
     }
     case 'set-os': cfg.os = a.dataset.os; saveCfg(); refreshSetup(); break;
-    case 'ot-setup':
-      getOtCfg().then(c => { location.href = 'owntracks:///config?inline=' + encodeURIComponent(btoa(JSON.stringify(c))); })
-        .catch(err => toast(err.message));
-      break;
+    case 'ot-setup': openOt(otWant()); break;
+    case 'ot-mode': openOt(a.dataset.p); if (!document.getElementById('setup-sheet')) closeSheet(); break;
     case 'ot-manual':
       getOtCfg().then(c => {
         document.getElementById('ot-manual').innerHTML = `<div class="card" style="margin-top:8px;font-size:13px;line-height:1.7">
           OwnTracks → 設定（Settings）：<br>· 模式 Mode：<b>HTTP</b><br>· 網址 URL（長按全選複製）：
           <div style="word-break:break-all;user-select:all;background:var(--card2);padding:6px;border-radius:8px">${esc(c.url)}</div>
-          · 裝置 ID（Device ID）：<b>${esc(c.deviceId)}</b>　· 縮寫（Tracker ID）：<b>${esc(c.tid)}</b><br>· 監控模式 Monitoring：<b>Move</b></div>`;
+          · 裝置 ID（Device ID）：<b>${esc(c.deviceId)}</b>　· 縮寫（Tracker ID）：<b>${esc(c.tid)}</b><br>· 監控模式 Monitoring：<b>Significant</b>（輪到你跑時 app 會叫你切 Move）${isIOS ? '' : '<br>· Limit max locator frequency：<b>開</b>'}</div>`;
       }).catch(err => toast(err.message));
       break;
     case 'reset-phone':
@@ -1335,6 +1399,10 @@ function autoSetup() {
   if (sync.key && !cfg.setupDone && !setupShown && !window.CRUFU_SIM) { setupShown = true; openSetup(); }
 }
 autoSetup();
+checkOtParam(location.search);
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => {
+  if (e.data && e.data.url) checkOtParam(new URL(e.data.url).search);
+});
 window.addEventListener('hashchange', () => { if (readHash()) { autoSetup(); doSync(); } });
 // 每 15 秒同步一次；切回 app 時馬上同步
 pushInit().then(refreshSetup);
