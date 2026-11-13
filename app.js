@@ -846,8 +846,11 @@ const legLines = [], legPts = [], minorPins = [];
 const PIN_ZOOM = 11;                       // 放大到這級以上才顯示每一棒的編號
 let runGlow, runDash, runLegShown = 0;
 // 棒次編號：外層給 Leaflet 定位，內層 span 依縮放等級改大小（見 index.html 的 .pin）
-const pinIcon = (txt, major) => L.divIcon({ className: 'pin-wrap', iconSize: [0, 0],
-  html: `<span class="pin${major ? ' major' : ''}">${txt}</span>` });
+// 顏色比照大會我的地圖：起點藍、一般接力區紅、汽車接力點（第 5、10、15、20、25 區）紫、終點橘
+const pinIcon = (txt, kind) => L.divIcon({ className: 'pin-wrap', iconSize: [0, 0],
+  html: `<span class="pin ${kind}">${txt}</span>` });
+const pinKind = n => n === 1 ? 'start' : (n - 1) % 5 === 0 ? 'car' : 'relay';
+const PIN_LEGEND = [['start', '起點'], ['relay', '接力區'], ['car', '汽車接力點（換車）'], ['finish', '終點']];
 function initMap() {
   map = L.map('map', { zoomControl: false, attributionControl: true });
   // Esri 街道圖磚（免金鑰；OSM 會擋 file:// 開啟的網頁），用 CSS 濾鏡轉成深色（見 index.html 的 .dark-tiles）
@@ -861,10 +864,20 @@ function initMap() {
       .on('click', () => openLeg(Lg.n)));
     // 換車點（第 1、6、11…26 棒起點）一直顯示，其他棒放大才顯示
     const major = Lg.n % 5 === 1;
-    const pin = L.marker(Lg.start, { icon: pinIcon(Lg.n, major), zIndexOffset: major ? 500 : 0 }).on('click', () => openLeg(Lg.n));
+    const pin = L.marker(Lg.start, { icon: pinIcon(Lg.n, pinKind(Lg.n)), zIndexOffset: major ? 500 : 0 }).on('click', () => openLeg(Lg.n));
     if (major) pin.addTo(map); else minorPins.push(pin);
   }
-  L.marker(D.legs[29].end, { icon: pinIcon('終', true), zIndexOffset: 500 }).addTo(map);
+  L.marker(D.legs[29].end, { icon: pinIcon('終', 'finish'), zIndexOffset: 500 }).addTo(map);
+  // 圖例（左下角）：標記顏色＝接力區類型，線段顏色＝難度
+  const legend = L.control({ position: 'bottomleft' });
+  legend.onAdd = () => {
+    const d = L.DomUtil.create('div', 'map-legend');
+    d.innerHTML = PIN_LEGEND.map(([k, t]) => `<div><i class="pin-dot ${k}"></i>${t}</div>`).join('')
+      + `<div style="margin-top:4px">${Object.entries(LEVEL_COLOR).map(([k, c]) => `<i class="line-dot" style="background:${c}"></i>${k}`).join(' ')}</div>`;
+    L.DomEvent.disableClickPropagation(d);
+    return d;
+  };
+  legend.addTo(map);
   // 進行中的棒次：外層光暈＋流動虛線（動畫在 index.html 的 .leg-run）
   runGlow = L.polyline([], { color: '#fff', weight: 16, opacity: 0.25, interactive: false, className: 'leg-glow' });
   runDash = L.polyline([], { color: '#fff', weight: 4, opacity: 1, dashArray: '8 14', interactive: false, className: 'leg-run' });

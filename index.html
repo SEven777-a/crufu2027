@@ -128,7 +128,17 @@ h2 { font-size: 15px; color: var(--muted); font-weight: 600; margin: 20px 0 8px;
 .pin-wrap { overflow: visible; }
 .pin { position: absolute; transform: translate(-50%, -50%); background: #111; color: #ddd; border: 1px solid #666;
   border-radius: 7px; font: 700 13px/1 sans-serif; padding: 4px 6px; white-space: nowrap; }
-.pin.major { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-size: 14px; }
+/* 接力區類型配色（比照大會我的地圖） */
+.pin.start, .pin-dot.start { background: #0288D1; }
+.pin.relay, .pin-dot.relay { background: #FF5252; }
+.pin.car, .pin-dot.car { background: #9C27B0; }
+.pin.finish, .pin-dot.finish { background: #E65100; }
+.pin.start, .pin.relay, .pin.car, .pin.finish { color: #fff; border-color: #fff; }
+.pin.start, .pin.car, .pin.finish { font-size: 14px; }
+.leaflet-left .map-legend { margin-left: 10px; margin-bottom: 70px; }  /* 避開示範模式的底部橫條，和右側按鈕同高 */
+.map-legend { background: rgba(17,17,17,.82); color: #eee; font: 12px/1.6 sans-serif; padding: 6px 9px; border-radius: 8px; }
+.map-legend .pin-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; border: 1px solid #fff; margin-right: 6px; vertical-align: -1px; }
+.map-legend .line-dot { display: inline-block; width: 14px; height: 4px; border-radius: 2px; margin: 0 4px 0 2px; vertical-align: 2px; }
 .pins-md .pin { font-size: 17px; padding: 5px 8px; }
 .pins-lg .pin { font-size: 22px; padding: 6px 11px; border-radius: 9px; }
 /* 進行中的棒次：虛線往前流動＋光暈呼吸 */
@@ -279,6 +289,6 @@ document.addEventListener('gesturestart', e => { if (!e.target.closest || !e.tar
 <script src="data.js?v=9"></script>
 <!-- 網址加 ?sim 進入模擬模式（假的 10 人比賽，不連真的資料庫） -->
 <script>if (/[?&]sim\b/.test(location.search)) document.write('<script src="sim.js?v=3"><\/script>');</script>
-<script src="app.js?v=47"></script>
+<script src="app.js?v=48"></script>
 </body>
 </html>
